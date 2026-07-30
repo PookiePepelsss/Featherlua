@@ -5,6 +5,7 @@ import { resolveScopes } from "./scope-resolver";
 import { computeRenameMap } from "./renamer";
 import { structurallyEqual } from "./alpha-equivalence";
 import { stripTypeInfo } from "./strip-types";
+import { optimize } from "./optimize";
 
 export type CompressResult =
   | { ok: true; output: string }
@@ -14,8 +15,9 @@ function parseError(message: string, line = 0, col = 0): CompressResult {
   return { ok: false, error: { message, line, col } };
 }
 
-// lex -> parse -> resolve scopes -> compute safe local-rename map -> print
-// -> self-validate. The self-validation step re-parses the printed code and
+// lex -> parse -> fold/eliminate -> resolve scopes -> strip types -> compute
+// safe local-rename map -> print -> self-validate. The self-validation step
+// re-parses the printed code and
 // checks it's alpha-equivalent to what we started with: it can't catch
 // every possible bug (a shared blind spot between the parser and printer
 // slips through), but it's a zero-dependency last line of defense that
@@ -32,6 +34,11 @@ export function compressAggressive(source: string): CompressResult {
   }
 
   const { chunk, protectedComments } = parsed;
+  // Fold literal arithmetic and eliminate literal-true/false branches
+  // before scope resolution -- both are pure AST simplifications that need
+  // no symbol information, and running them first means the (possibly
+  // smaller) simplified tree is what gets resolved/renamed/printed.
+  optimize(chunk);
   const resolved = resolveScopes(chunk);
   // Luau types are erased at compile time -- dropping them can never change
   // runtime behavior, only how much survives for static analysis/IDE

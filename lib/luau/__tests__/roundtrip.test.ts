@@ -5,17 +5,22 @@ import { structurallyEqual } from "../alpha-equivalence";
 import { compressAggressive } from "../compress-aggressive";
 import { computeRenameMap } from "../renamer";
 import { stripTypeInfo } from "../strip-types";
+import { optimize } from "../optimize";
 import { loadFixtures } from "./fixtures";
 import type { LocalStat } from "../ast";
 
 describe("round-trip: alpha-equivalence after renaming", () => {
   for (const fixture of loadFixtures()) {
     it(fixture.name, () => {
-      // compressAggressive strips type annotations (zero runtime effect in
-      // Luau), so the "original" side of this comparison must be stripped
-      // the same way -- the invariant under test is "equivalent modulo
-      // intentional type-info loss", not "byte-identical AST shape".
-      const original = resolveScopes(parse(fixture.source).chunk);
+      // compressAggressive folds literal arithmetic/dead branches and
+      // strips type annotations (zero runtime effect in Luau), so the
+      // "original" side of this comparison must go through the same
+      // transforms, in the same order (optimize runs pre-resolution) --
+      // the invariant under test is "equivalent modulo intentional,
+      // behavior-preserving simplification", not "byte-identical AST".
+      const originalChunk = parse(fixture.source).chunk;
+      optimize(originalChunk);
+      const original = resolveScopes(originalChunk);
       stripTypeInfo(original.chunk);
       const result = compressAggressive(fixture.source);
       expect(result.ok).toBe(true);
