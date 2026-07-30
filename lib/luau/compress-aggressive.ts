@@ -10,6 +10,7 @@ import { stripTypeInfo } from "./strip-types";
 import { optimize } from "./optimize";
 import { propagateConstants } from "./constant-propagate";
 import { removeUnusedLocals } from "./remove-unused-locals";
+import { hoistRepeatedGlobalAccess } from "./hoist-repeated-access";
 
 export type CompressResult =
   | { ok: true; output: string }
@@ -32,6 +33,13 @@ export interface AggressiveOptions {
   /** Drop type annotations, generics, and `type`/`export type` aliases
    * (zero runtime effect in Luau -- erased at compile time). */
   stripTypes: boolean;
+  /** EXPERIMENTAL, off by default: hoist a `global.field.field...` chain
+   * read multiple times in a loop into a local computed once before it.
+   * Unlike every other option here, this rests on an assumption that
+   * can't be verified from source -- that the accessed tables have no
+   * custom `__index` metamethod with a side effect. See
+   * hoist-repeated-access.ts for the full safety scoping. */
+  hoistRepeatedAccess: boolean;
 }
 
 export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
@@ -40,6 +48,7 @@ export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   propagateConstants: true,
   removeUnusedLocals: true,
   stripTypes: true,
+  hoistRepeatedAccess: false,
 };
 
 function parseError(message: string, line = 0, col = 0): CompressResult {
@@ -50,8 +59,12 @@ function parseError(message: string, line = 0, col = 0): CompressResult {
 // before printing -- exported so tests build their comparison baseline
 // from this instead of a hand-copied pipeline that can drift out of sync.
 export function transformForAggressive(chunk: Chunk, options: AggressiveOptions = DEFAULT_AGGRESSIVE_OPTIONS): ResolvedProgram {
-  // Needs no symbol info, so it can run before resolution.
+  // Both need no symbol info, so they run before resolution. Folding first,
+  // so hoisting sees an already-simplified tree (e.g. a dead branch that
+  // would have contained a disqualifying call is gone before hoisting
+  // looks for candidates).
   if (options.foldConstants) optimize(chunk);
+  if (options.hoistRepeatedAccess) hoistRepeatedGlobalAccess(chunk);
   const resolved = resolveScopes(chunk);
   // Looped: propagation and unused-local removal feed each other (removing
   // an unused `local b = a` can make `a` itself newly unused), and folding

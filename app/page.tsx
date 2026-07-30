@@ -335,6 +335,14 @@ export default function Home() {
             />
             Strip types
           </label>
+          <label title="Experimental: assumes accessed tables have no custom __index side effects. Off by default.">
+            <input
+              type="checkbox"
+              checked={options.hoistRepeatedAccess}
+              onChange={() => toggleOption("hoistRepeatedAccess")}
+            />
+            Hoist repeated access (experimental)
+          </label>
         </fieldset>
       )}
 

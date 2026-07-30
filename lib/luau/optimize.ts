@@ -7,7 +7,7 @@ import type { Chunk, Expr, Stat } from "./ast";
 // `//`, or `^` (Lua's `%` is floor-mod, JS's is truncating and disagrees
 // on mixed signs; `^` isn't guaranteed bit-identical to Lua's libm `pow`).
 
-function parseLuauNumber(raw: string): number | undefined {
+export function parseLuauNumber(raw: string): number | undefined {
   const clean = raw.replace(/_/g, "");
   const hex = /^0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]*))?(?:[pP]([+-]?[0-9]+))?$/.exec(clean);
   if (hex) {
