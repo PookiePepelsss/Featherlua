@@ -145,7 +145,9 @@ export function tokenize(source: string): LexResult {
       return;
     }
     if (DIGIT_RE.test(char) || (char === "." && DIGIT_RE.test(source[cursor + 1] ?? ""))) {
-      cursor = scanNumber(source, cursor);
+      const end = scanNumber(source, cursor);
+      if (end === -1) fail("Malformed number (missing exponent digits)", start);
+      cursor = end;
       emit("Number", source.slice(start, cursor), start, cursor);
       return;
     }

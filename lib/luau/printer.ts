@@ -102,6 +102,10 @@ export class Printer {
     if (func.hasVararg) {
       if (!first) this.emit(",");
       this.emit("...");
+      if (func.varargType) {
+        this.emit(":");
+        this.emitTypeSpan(func.varargType);
+      }
     }
     this.emit(")");
     if (func.returnType) {

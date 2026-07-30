@@ -329,11 +329,16 @@ class Parser {
     this.expectSymbol("(");
     const params: Param[] = [];
     let hasVararg = false;
+    let varargType: TypeSpan | undefined;
     if (!this.atSymbol(")")) {
       for (;;) {
         if (this.atSymbol("...")) {
           this.advance();
           hasVararg = true;
+          if (this.atSymbol(":")) {
+            this.advance();
+            varargType = this.parseTypeSpan();
+          }
           break;
         }
         const name = this.expectNameText();
@@ -358,7 +363,7 @@ class Parser {
     }
     const body = this.parseBlock();
     this.expectKeyword("end");
-    return { type: "FunctionExpr", params, hasVararg, implicitSelf, generics, returnType, body };
+    return { type: "FunctionExpr", params, hasVararg, varargType, implicitSelf, generics, returnType, body };
   }
 
   private parseTypeAliasStat(exported: boolean): Stat {

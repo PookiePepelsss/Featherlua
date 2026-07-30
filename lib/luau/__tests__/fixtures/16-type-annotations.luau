@@ -10,3 +10,11 @@ local function identity<T>(x: T): T
 end
 
 local origin: Point = { x = 0, y = 0 }
+
+local function sum(...: number): number
+    local total = 0
+    for _, n in ipairs({ ... }) do
+        total = total + n
+    end
+    return total
+end

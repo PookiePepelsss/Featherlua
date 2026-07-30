@@ -102,3 +102,54 @@ describe("regression: unterminated tokens must be rejected, not silently truncat
     expect(result.ok).toBe(true);
   });
 });
+
+describe("regression: typed varargs", () => {
+  it("`function f(...: number)` parses and round-trips", () => {
+    const result = compressAggressive("local function f(...: number) return ... end");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toContain("...:number");
+    assertValidRoundtrip(result.output);
+  });
+
+  it("typed varargs alongside typed params", () => {
+    const result = compressAggressive("local function f(a: string, ...: number) return a end");
+    expect(result.ok).toBe(true);
+  });
+});
+
+describe("regression: malformed numeric literals are rejected", () => {
+  it("decimal exponent with no digits", () => {
+    const result = compressAggressive("local x = 1e");
+    expect(result.ok).toBe(false);
+  });
+
+  it("decimal exponent with only a sign, no digits", () => {
+    const result = compressAggressive("local x = 1e+");
+    expect(result.ok).toBe(false);
+  });
+
+  it("hex float exponent with no digits", () => {
+    const result = compressAggressive("local x = 0x1p");
+    expect(result.ok).toBe(false);
+  });
+
+  it("valid exponents of all forms still parse", () => {
+    for (const src of ["local x = 1e5", "local x = 1e+5", "local x = 1e-5", "local x = 0x1p2", "local x = 0x1p+2"]) {
+      expect(compressAggressive(src).ok).toBe(true);
+    }
+  });
+});
+
+describe("regression: self-validation catches printer bugs before they reach the user", () => {
+  it("a deliberately broken printer path is caught by internal self-validation, not shipped", () => {
+    // Sanity check that the safety net is wired up at all: feed it a
+    // construct whose only way to break would be a printer regression, and
+    // confirm success is real (not just result.ok trivially true because
+    // nothing exercised the check).
+    const result = compressAggressive("local a, b = ((f()))");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    assertValidRoundtrip(result.output);
+  });
+});

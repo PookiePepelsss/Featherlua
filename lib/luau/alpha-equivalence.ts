@@ -9,6 +9,24 @@ export interface EquivalenceResult {
 
 class MismatchError extends Error {}
 
+// Unwraps ParenExpr layers down to the innermost expression, UNLESS a layer
+// directly wraps something that can yield multiple values (call/method-call/
+// vararg) -- there the paren truncates to exactly one value, which is
+// semantically observable, so that one layer is kept. Mirrors printer.ts's
+// own load-bearing-parens rule exactly (same three node types), since this
+// exists specifically to match what the printer is entitled to collapse.
+function peelCosmeticParens(expr: Expr): Expr {
+  let current = expr;
+  while (current.type === "ParenExpr") {
+    const inner = current.expr;
+    if (inner.type === "CallExpr" || inner.type === "MethodCallExpr" || inner.type === "VarargExpr") {
+      return current;
+    }
+    current = inner;
+  }
+  return current;
+}
+
 // Lockstep structural walk of two ASTs. Exact match required on node `type`
 // and every non-identifier field (operators, member/method names, table
 // keys, type-span token text, label names). Identifier/declaration names
@@ -107,6 +125,7 @@ class Comparator {
     if (a.implicitSelf !== b.implicitSelf) this.fail(`implicitSelf ${a.implicitSelf} vs ${b.implicitSelf}`);
     this.optionalTypeSpan(a.generics, b.generics);
     this.optionalTypeSpan(a.returnType, b.returnType);
+    this.optionalTypeSpan(a.varargType, b.varargType);
     if (a.implicitSelf) this.declare(a.selfSymbolId, b.selfSymbolId, "self", "self");
     this.params(a.params, b.params);
     this.block(a.body, b.body);
@@ -276,7 +295,16 @@ class Comparator {
     }
   }
 
-  private expr(a: Expr, b: Expr) {
+  private expr(rawA: Expr, rawB: Expr) {
+    // The printer legitimately collapses redundant nested ParenExpr layers
+    // (e.g. `((({a=1})))` prints with a single, or zero, paren layer,
+    // whichever is load-bearing) -- so the number of ParenExpr wrappers
+    // around an expression is not semantically meaningful and must be
+    // normalized away before structural comparison, using the exact same
+    // "is this paren load-bearing" rule the printer uses (see
+    // printer.ts's printPrefixExprBase / general ParenExpr handling).
+    const a = peelCosmeticParens(rawA);
+    const b = peelCosmeticParens(rawB);
     if (a.type !== b.type) this.fail(`expr type '${a.type}' vs '${b.type}'`);
     switch (a.type) {
       case "NilExpr":

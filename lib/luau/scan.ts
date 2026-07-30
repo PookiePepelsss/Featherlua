@@ -51,25 +51,32 @@ export function scanQuoted(source: string, start: number, quote: string) {
   return -1;
 }
 
+// Returns -1 if an exponent marker (e/E/p/P) is present with no digits
+// following it (e.g. "1e", "0x1p+"), an incomplete literal that isn't a
+// valid Lua/Luau number.
 export function scanNumber(source: string, start: number) {
   let cursor = start;
+  let invalid = false;
   const takeDigits = (pattern: RegExp) => {
+    let sawDigit = false;
     while (cursor < source.length && (pattern.test(source[cursor]) || source[cursor] === "_")) {
+      if (pattern.test(source[cursor])) sawDigit = true;
       cursor += 1;
     }
+    return sawDigit;
   };
   const takeExponent = (lower: string, upper: string) => {
     if (source[cursor] !== lower && source[cursor] !== upper) return;
     cursor += 1;
     if (source[cursor] === "+" || source[cursor] === "-") cursor += 1;
-    takeDigits(/[0-9]/);
+    if (!takeDigits(/[0-9]/)) invalid = true;
   };
 
   if (source[cursor] === ".") {
     cursor += 1;
     takeDigits(/[0-9]/);
     takeExponent("e", "E");
-    return cursor;
+    return invalid ? -1 : cursor;
   }
   if (source[cursor] === "0" && (source[cursor + 1] === "x" || source[cursor + 1] === "X")) {
     cursor += 2;
@@ -79,7 +86,7 @@ export function scanNumber(source: string, start: number) {
       takeDigits(/[0-9a-fA-F]/);
     }
     takeExponent("p", "P");
-    return cursor;
+    return invalid ? -1 : cursor;
   }
   if (source[cursor] === "0" && (source[cursor + 1] === "b" || source[cursor + 1] === "B")) {
     cursor += 2;
@@ -92,7 +99,7 @@ export function scanNumber(source: string, start: number) {
     takeDigits(/[0-9]/);
   }
   takeExponent("e", "E");
-  return cursor;
+  return invalid ? -1 : cursor;
 }
 
 // Finds the end of a long comment/line comment starting at `cursor` (which

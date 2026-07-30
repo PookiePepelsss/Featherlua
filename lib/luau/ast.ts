@@ -243,6 +243,8 @@ export interface FunctionExpr {
   type: "FunctionExpr";
   params: Param[];
   hasVararg: boolean;
+  /** Type annotation on `...` itself, e.g. `function f(...: number)`. */
+  varargType?: TypeSpan;
   implicitSelf: boolean;
   /** Set by scope-resolver when implicitSelf is true: the synthesized `self`
    * symbol's id, so references to `self` in the body resolve like any other
