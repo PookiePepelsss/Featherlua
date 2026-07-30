@@ -104,11 +104,14 @@ describe("regression: unterminated tokens must be rejected, not silently truncat
 });
 
 describe("regression: typed varargs", () => {
-  it("`function f(...: number)` parses and round-trips", () => {
+  it("`function f(...: number)` parses (previously failed outright)", () => {
+    // Aggressive mode strips type annotations (see the strip-types tests),
+    // so the type itself won't survive to the output -- this test is about
+    // parsing succeeding at all, which used to throw "Expected ')'".
     const result = compressAggressive("local function f(...: number) return ... end");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toContain("...:number");
+    expect(result.output).toContain("...)");
     assertValidRoundtrip(result.output);
   });
 

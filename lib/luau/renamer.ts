@@ -1,6 +1,6 @@
 import { KEYWORDS } from "./tokens";
 import type { Chunk, Expr, Stat } from "./ast";
-import type { ResolvedProgram } from "./scope-resolver";
+import type { ResolvedProgram, Scope } from "./scope-resolver";
 
 // Excluded from the generated-name alphabet even though Luau treats them as
 // contextual/soft keywords (legal identifiers in most positions) -- zero
@@ -154,27 +154,52 @@ function collectGlobalNames(chunk: Chunk): Set<string> {
   return names;
 }
 
-// One globally-unique short name per symbol across the whole file (not
-// per-scope reuse) -- simpler, and sidesteps an entire class of
-// shadowing/capture bugs that would otherwise need a Lua VM to catch. See
-// plan for the tradeoff (smaller output from per-scope reuse is a possible
-// future optimization, not attempted here).
+// Scope-aware name reuse: two symbols can safely share a generated name if
+// neither's declaring scope is an ancestor of the other's, because Lua's
+// static lexical scoping means they're never simultaneously visible/live --
+// regardless of runtime call order, even across escaping closures (a
+// closure's free-variable references always resolve to where it was
+// *defined*, never where/when it's *called*). Implemented as a DFS over the
+// scope tree with an inherited "next free index" counter: a scope's own
+// declarations consume consecutive indices starting from what its parent
+// had already used, so no descendant ever collides with an ancestor's
+// names -- but sibling/cousin scopes independently restart from the same
+// inherited base, so they naturally reuse the same short names. This is
+// strictly more names-reused (smaller output) than the previous
+// one-globally-unique-name-per-symbol scheme, while remaining provably
+// collision-free by construction. compress-aggressive.ts's self-validation
+// (re-parse + alpha-equivalence check) is a backstop against any mistake
+// here, same as it would be for the simpler scheme.
 export function computeRenameMap(resolved: ResolvedProgram): Map<number, string> {
   const taken = new Set<string>([...KEYWORDS, ...SOFT_KEYWORDS, ...collectGlobalNames(resolved.chunk)]);
   const renameMap = new Map<number, string>();
-  const orderedSymbols = [...resolved.symbols.values()].sort((a, b) => a.id - b.id);
-  let n = 0;
-  for (const symbol of orderedSymbols) {
-    // Luau's `:` method-call sugar always binds the literal name `self` --
-    // there is no way to call it anything else while still using colon-call
-    // syntax, so it must never be renamed.
-    if (symbol.kind === "self") continue;
+
+  function nextFreeIndex(startIndex: number): { name: string; afterIndex: number } {
+    let n = startIndex;
     let candidate: string;
     do {
       candidate = shortName(n);
       n += 1;
     } while (taken.has(candidate));
-    renameMap.set(symbol.id, candidate);
+    return { name: candidate, afterIndex: n };
   }
+
+  function visit(scope: Scope, baseIndex: number) {
+    let index = baseIndex;
+    for (const symbolId of scope.declaredOrder) {
+      const symbol = resolved.symbols.get(symbolId)!;
+      // Luau's `:` method-call sugar always binds the literal name `self`
+      // -- there's no way to call it anything else while still using
+      // colon-call syntax, so it must never be renamed (and must not
+      // consume an index, since it never occupies a printed name slot).
+      if (symbol.kind === "self") continue;
+      const { name, afterIndex } = nextFreeIndex(index);
+      renameMap.set(symbolId, name);
+      index = afterIndex;
+    }
+    for (const child of scope.children) visit(child, index);
+  }
+
+  visit(resolved.rootScope, 0);
   return renameMap;
 }

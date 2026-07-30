@@ -4,6 +4,7 @@ import { print } from "./printer";
 import { resolveScopes } from "./scope-resolver";
 import { computeRenameMap } from "./renamer";
 import { structurallyEqual } from "./alpha-equivalence";
+import { stripTypeInfo } from "./strip-types";
 
 export type CompressResult =
   | { ok: true; output: string }
@@ -32,6 +33,12 @@ export function compressAggressive(source: string): CompressResult {
 
   const { chunk, protectedComments } = parsed;
   const resolved = resolveScopes(chunk);
+  // Luau types are erased at compile time -- dropping them can never change
+  // runtime behavior, only how much survives for static analysis/IDE
+  // tooling on the *output*. Stripped before printing (not just skipped by
+  // the printer) so self-validation below compares apples to apples: the
+  // reparsed output naturally has no type spans either.
+  stripTypeInfo(resolved.chunk);
   const renameMap = computeRenameMap(resolved);
   const printed = print(chunk, renameMap);
 

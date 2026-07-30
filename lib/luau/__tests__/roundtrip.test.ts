@@ -4,13 +4,19 @@ import { resolveScopes } from "../scope-resolver";
 import { structurallyEqual } from "../alpha-equivalence";
 import { compressAggressive } from "../compress-aggressive";
 import { computeRenameMap } from "../renamer";
+import { stripTypeInfo } from "../strip-types";
 import { loadFixtures } from "./fixtures";
 import type { LocalStat } from "../ast";
 
 describe("round-trip: alpha-equivalence after renaming", () => {
   for (const fixture of loadFixtures()) {
     it(fixture.name, () => {
+      // compressAggressive strips type annotations (zero runtime effect in
+      // Luau), so the "original" side of this comparison must be stripped
+      // the same way -- the invariant under test is "equivalent modulo
+      // intentional type-info loss", not "byte-identical AST shape".
       const original = resolveScopes(parse(fixture.source).chunk);
+      stripTypeInfo(original.chunk);
       const result = compressAggressive(fixture.source);
       expect(result.ok).toBe(true);
       if (!result.ok) return;

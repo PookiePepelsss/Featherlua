@@ -8,14 +8,26 @@ export interface Symbol {
   kind: "local" | "param" | "loopvar" | "self";
 }
 
-interface Scope {
+// Exported so renamer.ts can do scope-aware name reuse: two symbols whose
+// declaring scopes aren't in an ancestor/descendant relationship (siblings,
+// cousins, ...) are never simultaneously visible under Lua's static lexical
+// scoping, so they can safely share a generated name.
+export interface Scope {
   parent: Scope | null;
   names: Map<string, Symbol>;
+  /** Symbol ids declared directly in this scope, in declaration order.
+   * Unlike `names` (which only keeps the latest symbol per string key, for
+   * lookup), this keeps every declaration, including ones later shadowed by
+   * a same-named redeclaration in the same scope (`local x=1; local x=2`
+   * is two distinct symbols, both need their own slot). */
+  declaredOrder: number[];
+  children: Scope[];
 }
 
 export interface ResolvedProgram {
   chunk: Chunk;
   symbols: Map<number, Symbol>;
+  rootScope: Scope;
 }
 
 class ScopeResolver {
@@ -29,12 +41,15 @@ class ScopeResolver {
   }
 
   private pushScope(parent: Scope | null): Scope {
-    return { parent, names: new Map() };
+    const scope: Scope = { parent, names: new Map(), declaredOrder: [], children: [] };
+    if (parent) parent.children.push(scope);
+    return scope;
   }
 
   private declare(scope: Scope, name: string, kind: Symbol["kind"]): Symbol {
     const sym = this.createSymbol(name, kind);
     scope.names.set(name, sym);
+    scope.declaredOrder.push(sym.id);
     return sym;
   }
 
@@ -49,7 +64,7 @@ class ScopeResolver {
   resolve(chunk: Chunk): ResolvedProgram {
     const root = this.pushScope(null);
     this.block(chunk.body, root);
-    return { chunk, symbols: this.symbols };
+    return { chunk, symbols: this.symbols, rootScope: root };
   }
 
   private block(stats: Stat[], scope: Scope) {
