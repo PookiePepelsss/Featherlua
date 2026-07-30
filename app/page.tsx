@@ -2,18 +2,6 @@
 
 import { useState } from "react";
 
-const example = `--!strict
-local function send(remote, player, payload, ...)
-    local envelope = {
-        payload = payload,
-        sentAt = os.clock(),
-    }
-
-    return remote:InvokeServer(player, envelope, nil, ...)
-end
-
-return send`;
-
 const compoundSymbols = [
   "...", "..=", "//=", "==", "~=", "<=", ">=", "+=", "-=", "*=", "/=",
   "%=", "^=", "::", "->", "//", "..",
@@ -147,7 +135,6 @@ function needsSpace(left: string, right: string) {
 function compressSource(source: string) {
   const tokens: string[] = [];
   const protectedComments: string[] = [];
-  let removedComments = 0;
   let cursor = 0;
 
   if (source.startsWith("#!")) {
@@ -174,7 +161,7 @@ function compressSource(source: string) {
       const comment = source.slice(start, cursor);
       if (comment.startsWith("--!") || /@license|@preserve|copyright|spdx/i.test(comment)) {
         protectedComments.push(comment);
-      } else removedComments += 1;
+      }
       continue;
     }
 
@@ -208,29 +195,16 @@ function compressSource(source: string) {
     output += token;
   }
   if (protectedComments.length) output = `${protectedComments.join("\n")}\n${output}`;
-  return { output: output.trim(), removedComments };
-}
-
-function byteLength(value: string) {
-  return new TextEncoder().encode(value).length;
+  return output.trim();
 }
 
 export default function Home() {
-  const [source, setSource] = useState(example);
+  const [source, setSource] = useState("");
   const [output, setOutput] = useState("");
-  const [removedComments, setRemovedComments] = useState(0);
   const [copied, setCopied] = useState(false);
 
-  const inputBytes = byteLength(source);
-  const outputBytes = byteLength(output);
-  const reduction = inputBytes && output
-    ? Math.max(0, ((inputBytes - outputBytes) / inputBytes) * 100)
-    : 0;
-
   function compress() {
-    const result = compressSource(source);
-    setOutput(result.output);
-    setRemovedComments(result.removedComments);
+    setOutput(compressSource(source));
     setCopied(false);
   }
 
@@ -251,67 +225,35 @@ export default function Home() {
   }
 
   return (
-    <main>
-      <header>
-        <div className="brand">LU<span>AU</span></div>
-        <p>Safe source compressor</p>
-      </header>
+    <main className="app">
+      <section className="editors" aria-label="Luau compressor">
+        <label className="srOnly" htmlFor="source">Input</label>
+        <textarea
+          id="source"
+          value={source}
+          onChange={(event) => setSource(event.target.value)}
+          spellCheck={false}
+          placeholder="Input"
+          autoFocus
+        />
 
-      <section className="intro">
-        <p className="eyebrow">Runs entirely in your browser</p>
-        <h1>Make Luau smaller.</h1>
-        <p className="lede">
-          Paste a script, compress it, and copy the result. Strings, globals,
-          member names, calls, argument order, <code>nil</code>, and <code>...</code> stay intact.
-        </p>
+        <label className="srOnly" htmlFor="output">Output</label>
+        <textarea
+          id="output"
+          value={output}
+          readOnly
+          spellCheck={false}
+          placeholder="Output"
+        />
       </section>
 
-      <section className="workspace" aria-label="Luau compressor">
-        <div className="panel">
-          <div className="panelBar">
-            <label htmlFor="source">Source</label>
-            <span>{inputBytes.toLocaleString()} bytes</span>
-          </div>
-          <textarea
-            id="source"
-            value={source}
-            onChange={(event) => setSource(event.target.value)}
-            spellCheck={false}
-            placeholder="Paste Lua or Luau here..."
-          />
-        </div>
-
-        <div className="actions">
-          <button className="primary" onClick={compress} disabled={!source.trim()}>
-            Compress
-          </button>
-          <button onClick={() => setSource(example)}>Load example</button>
-          <button onClick={() => { setSource(""); setOutput(""); }}>Clear</button>
-        </div>
-
-        <div className="panel">
-          <div className="panelBar">
-            <label htmlFor="output">Compressed</label>
-            <span>{output ? `${outputBytes.toLocaleString()} bytes · ${reduction.toFixed(1)}% smaller` : "Waiting"}</span>
-          </div>
-          <textarea
-            id="output"
-            value={output}
-            readOnly
-            spellCheck={false}
-            placeholder="Your compressed script appears here."
-          />
-          <div className="outputActions">
-            <span>{output ? `${removedComments} comments removed` : "No upload. No server."}</span>
-            <div>
-              <button onClick={copyOutput} disabled={!output}>{copied ? "Copied" : "Copy"}</button>
-              <button onClick={downloadOutput} disabled={!output}>Download</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <footer>Conservative compression only. Your code never leaves this page.</footer>
+      <div className="actions" aria-label="Actions">
+        <button className="primary" onClick={compress} disabled={!source.trim()}>
+          Compress
+        </button>
+        <button onClick={copyOutput} disabled={!output}>{copied ? "Copied" : "Copy"}</button>
+        <button onClick={downloadOutput} disabled={!output}>Download</button>
+      </div>
     </main>
   );
 }
