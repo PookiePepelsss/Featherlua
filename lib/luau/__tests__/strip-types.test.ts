@@ -2,9 +2,17 @@ import { describe, expect, it } from "vitest";
 import { compressAggressive } from "../compress-aggressive";
 import { parse } from "../parser";
 
+// removeUnusedLocals is disabled throughout: these tests use minimal
+// `local x = ...` snippets with no subsequent read, specifically to test
+// type stripping in isolation. See remove-unused-locals.test.ts for that
+// pass.
+function compressNoUnusedCleanup(source: string) {
+  return compressAggressive(source, { removeUnusedLocals: false });
+}
+
 describe("Aggressive mode strips type annotations (zero runtime effect in Luau)", () => {
   it("removes param/return type annotations", () => {
-    const result = compressAggressive("local function f(a: number, b: string): boolean return true end");
+    const result = compressNoUnusedCleanup("local function f(a: number, b: string): boolean return true end");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).not.toContain(":number");
@@ -16,14 +24,14 @@ describe("Aggressive mode strips type annotations (zero runtime effect in Luau)"
   });
 
   it("removes local variable type annotations", () => {
-    const result = compressAggressive("local x: number = 1");
+    const result = compressNoUnusedCleanup("local x: number = 1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toBe("local a=1");
   });
 
   it("removes generics on functions", () => {
-    const result = compressAggressive("local function identity<T>(x: T): T return x end");
+    const result = compressNoUnusedCleanup("local function identity<T>(x: T): T return x end");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).not.toContain("<T>");
@@ -31,7 +39,7 @@ describe("Aggressive mode strips type annotations (zero runtime effect in Luau)"
   });
 
   it("drops `type` alias declarations entirely", () => {
-    const result = compressAggressive("type Point = { x: number, y: number }\nlocal x = 1");
+    const result = compressNoUnusedCleanup("type Point = { x: number, y: number }\nlocal x = 1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).not.toContain("type");
@@ -39,28 +47,28 @@ describe("Aggressive mode strips type annotations (zero runtime effect in Luau)"
   });
 
   it("drops `export type` alias declarations entirely", () => {
-    const result = compressAggressive("export type Alias<T> = T | nil\nlocal x = 1");
+    const result = compressNoUnusedCleanup("export type Alias<T> = T | nil\nlocal x = 1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toBe("local a=1");
   });
 
   it("unwraps type-assertion expressions to just their value", () => {
-    const result = compressAggressive("local x = 1 :: number");
+    const result = compressNoUnusedCleanup("local x = 1 :: number");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toBe("local a=1");
   });
 
   it("unwraps a type assertion nested inside a binary expression, preserving precedence", () => {
-    const result = compressAggressive("local x = 1 + (2 :: number)");
+    const result = compressNoUnusedCleanup("local x = 1 + (2 :: number)");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toBe("local a=1+2");
   });
 
   it("removes local attributes' type annotation but keeps the attribute itself (canonical <attrib>: Type order)", () => {
-    const result = compressAggressive("local x <const>: number = 1");
+    const result = compressNoUnusedCleanup("local x <const>: number = 1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     // `>` needs a space before `=` (else it would read as the `>=` operator).
@@ -68,7 +76,7 @@ describe("Aggressive mode strips type annotations (zero runtime effect in Luau)"
   });
 
   it("removes typed varargs' type", () => {
-    const result = compressAggressive("local function f(...: number) return ... end");
+    const result = compressNoUnusedCleanup("local function f(...: number) return ... end");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toBe("local function a(...)return...end");

@@ -9,6 +9,7 @@ import { structurallyEqual } from "./alpha-equivalence";
 import { stripTypeInfo } from "./strip-types";
 import { optimize } from "./optimize";
 import { propagateConstants } from "./constant-propagate";
+import { removeUnusedLocals } from "./remove-unused-locals";
 
 export type CompressResult =
   | { ok: true; output: string }
@@ -27,6 +28,9 @@ export interface AggressiveOptions {
   foldConstants: boolean;
   /** Substitute never-reassigned locals' values into their use sites. */
   propagateConstants: boolean;
+  /** Remove locals (and local functions) referenced nowhere, when the
+   * initializer can't possibly have a side effect or throw. */
+  removeUnusedLocals: boolean;
   /** Drop type annotations, generics, and `type`/`export type` aliases
    * (zero runtime effect in Luau -- erased at compile time). */
   stripTypes: boolean;
@@ -36,6 +40,7 @@ export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   rename: true,
   foldConstants: true,
   propagateConstants: true,
+  removeUnusedLocals: true,
   stripTypes: true,
 };
 
@@ -60,21 +65,24 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
   const resolved = resolveScopes(chunk);
   // Propagate locals that are provably never reassigned (proven by
   // scanning every assignment target in the program, not by trusting a
-  // `<const>` attribute) into their use sites, then re-run optimize() --
-  // this is what makes dead-branch elimination fire on real code, e.g.
-  // `local DEBUG = false; if DEBUG then ... end` only becomes foldable
-  // once DEBUG's value is substituted into the condition. Bounded rather
-  // than a bare `while(true)` as a defensive guard against any unforeseen
-  // non-termination; in practice this converges in 1-3 rounds, since each
-  // round strictly shrinks the remaining candidate pool. Looping without
-  // re-folding is pointless (nothing removes assignment statements between
-  // rounds except optimize()'s dead-branch elimination), so a single round
-  // suffices when foldConstants is off.
-  if (options.propagateConstants) {
+  // `<const>` attribute) into their use sites, and drop locals referenced
+  // nowhere at all (a separate concern from propagation -- see
+  // remove-unused-locals.ts), re-running optimize() between rounds -- this
+  // is what makes dead-branch elimination fire on real code, e.g. `local
+  // DEBUG = false; if DEBUG then ... end` only becomes foldable once
+  // DEBUG's value is propagated into the condition. Looped together
+  // because they can feed each other (`local a=5; local b=a` -- removing
+  // b as unused only makes a's reference count drop to zero on the NEXT
+  // round). Bounded rather than a bare `while(true)` as a defensive guard
+  // against any unforeseen non-termination; in practice this converges in
+  // a handful of rounds, since each round strictly shrinks what's left.
+  if (options.propagateConstants || options.removeUnusedLocals) {
     for (let i = 0; i < 20; i += 1) {
-      const changed = propagateConstants(resolved);
-      if (!changed || !options.foldConstants) break;
-      optimize(resolved.chunk);
+      let changed = false;
+      if (options.propagateConstants) changed = propagateConstants(resolved) || changed;
+      if (options.removeUnusedLocals) changed = removeUnusedLocals(resolved) || changed;
+      if (!changed) break;
+      if (options.foldConstants) optimize(resolved.chunk);
     }
   }
   // Luau types are erased at compile time -- dropping them can never change

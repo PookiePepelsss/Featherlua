@@ -57,7 +57,7 @@ describe("round-trip: renaming actually happens (alpha-equivalence alone can't p
   });
 
   it("globals, member names, method names, and string contents are never renamed", () => {
-    const source = 'local greeting = "myVeryLongVariableName"\nmyVeryLongVariableName.field = 1\nobj:myVeryLongVariableName()';
+    const source = 'local greeting = "myVeryLongVariableName"\nprint(greeting)\nmyVeryLongVariableName.field = 1\nobj:myVeryLongVariableName()';
     const result = compressAggressive(source);
     expect(result.ok).toBe(true);
     if (!result.ok) return;

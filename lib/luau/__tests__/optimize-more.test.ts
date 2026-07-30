@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import { compressAggressive } from "../compress-aggressive";
 import { parse } from "../parser";
 
+// removeUnusedLocals is disabled here: these tests use minimal `local x =
+// ...` snippets with no subsequent read, specifically to test folding in
+// isolation. See remove-unused-locals.test.ts for that pass.
 function output(source: string): string {
-  const result = compressAggressive(source);
+  const result = compressAggressive(source, { removeUnusedLocals: false });
   if (!result.ok) throw new Error(`expected ok:true, got error: ${result.error.message}`);
   return result.output;
 }

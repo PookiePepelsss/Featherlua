@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import { compressAggressive } from "../compress-aggressive";
 import { parse } from "../parser";
 
+// removeUnusedLocals is disabled here: these tests are specifically about
+// folding/dead-branch elimination in isolation, using minimal `local x =
+// ...` snippets with no subsequent read of `x` -- with unused-local removal
+// also on, the whole declaration (folded value and all) would vanish,
+// testing nothing. See remove-unused-locals.test.ts for that pass.
 function output(source: string): string {
-  const result = compressAggressive(source);
+  const result = compressAggressive(source, { removeUnusedLocals: false });
   if (!result.ok) throw new Error(`expected ok:true, got error: ${result.error.message}`);
   return result.output;
 }
@@ -26,7 +31,7 @@ describe("optimize: constant folding of literal arithmetic", () => {
   });
 
   it("negative fold results print as a valid, self-consistent unary minus (not a malformed literal)", () => {
-    const result = compressAggressive("local x = 1 - 5");
+    const result = compressAggressive("local x = 1 - 5", { removeUnusedLocals: false });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toBe("local a=-4");
@@ -48,14 +53,14 @@ describe("optimize: constant folding of literal arithmetic", () => {
   });
 
   it("does not fold division by zero (no literal syntax for inf/nan)", () => {
-    const result = compressAggressive("local x = 1 / 0");
+    const result = compressAggressive("local x = 1 / 0", { removeUnusedLocals: false });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toBe("local a=1/0");
   });
 
   it("does not fold to -0 (would lose the sign of zero)", () => {
-    const result = compressAggressive("local x = 0 * -1");
+    const result = compressAggressive("local x = 0 * -1", { removeUnusedLocals: false });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(() => parse(result.output)).not.toThrow();
@@ -74,7 +79,7 @@ describe("optimize: constant folding of literal arithmetic", () => {
   it("a folded expression inside a loop body is computed once, not left as a live subexpression", () => {
     // The point: without folding, `60*60*24` would be re-evaluated every
     // iteration at runtime; folded, it's a single literal load.
-    const result = compressAggressive("for i = 1, 10 do local x = 60 * 60 * 24 end");
+    const result = compressAggressive("for i = 1, 10 do local x = 60 * 60 * 24 end", { removeUnusedLocals: false });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toContain("86400");
@@ -121,7 +126,10 @@ describe("optimize: literal-condition branch elimination", () => {
     // the output's resolved references against the original's, so a leak
     // (print(x) resolving to a local instead of staying global) would have
     // been caught as a structural mismatch and rejected.
-    const result = compressAggressive("if true then local x = 5 end\nprint(x)");
+    // removeUnusedLocals disabled: this test isolates dead-branch
+    // elimination's own scope-preservation, not whether the (separately
+    // tested) unused-locals pass would also clean up the do-block further.
+    const result = compressAggressive("if true then local x = 5 end\nprint(x)", { removeUnusedLocals: false });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const { chunk } = parse(result.output);

@@ -322,6 +322,14 @@ export default function Home() {
           <label>
             <input
               type="checkbox"
+              checked={options.removeUnusedLocals}
+              onChange={() => toggleOption("removeUnusedLocals")}
+            />
+            Remove unused locals
+          </label>
+          <label>
+            <input
+              type="checkbox"
               checked={options.stripTypes}
               onChange={() => toggleOption("stripTypes")}
             />

@@ -338,13 +338,26 @@ function optimizeStat(stat: Stat): Stat | undefined {
     case "CallStat":
       stat.call = foldExpr(stat.call) as typeof stat.call;
       return stat;
-    case "DoStat":
+    case "DoStat": {
       stat.body = optimizeBlock(stat.body);
+      // An empty do-block does nothing and creates no observable scope --
+      // safe to drop outright, including empty blocks left behind by an
+      // earlier optimize()/propagateConstants() round (e.g. a `do...end`
+      // wrapper from eliminating an `if true` branch whose only statement
+      // was then itself removed by constant propagation).
+      if (stat.body.length === 0) return undefined;
       return stat;
-    case "WhileStat":
+    }
+    case "WhileStat": {
       stat.cond = foldExpr(stat.cond);
       stat.body = optimizeBlock(stat.body);
+      // `while false do ... end` never runs its body even once -- safe to
+      // drop entirely, unlike a mid-loop `break`/`if false` elimination
+      // (see optimize.ts's other passes) which must preserve scope via a
+      // do-wrapper; here nothing survives at all.
+      if (stat.cond.type === "FalseExpr" && !containsLabel(stat.body)) return undefined;
       return stat;
+    }
     case "RepeatStat":
       stat.body = optimizeBlock(stat.body);
       stat.cond = foldExpr(stat.cond);
@@ -360,11 +373,13 @@ function optimizeStat(stat: Stat): Stat | undefined {
       if (stat.clauses.length === 1) {
         const [clause] = stat.clauses;
         if (clause.cond.type === "TrueExpr" && !containsLabel(clause.body)) {
-          return { type: "DoStat", body: clause.body };
+          return clause.body.length === 0 ? undefined : { type: "DoStat", body: clause.body };
         }
         if (clause.cond.type === "FalseExpr") {
           if (stat.elseBody) {
-            if (!containsLabel(stat.elseBody)) return { type: "DoStat", body: stat.elseBody };
+            if (!containsLabel(stat.elseBody)) {
+              return stat.elseBody.length === 0 ? undefined : { type: "DoStat", body: stat.elseBody };
+            }
           } else if (!containsLabel(clause.body)) {
             return undefined; // neither branch ever runs; drop the statement
           }

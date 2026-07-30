@@ -64,11 +64,12 @@ describe("constant propagation: safety boundaries", () => {
     expect(result.output).toContain("<close>");
   });
 
-  it("does not remove a declaration with zero references just because its value is literal", () => {
+  it("propagation alone does not remove a declaration with zero references just because its value is literal", () => {
     // Confirms propagation is scoped to actual substitution, not a general
-    // unused-variable-elimination pass -- an unreferenced local is left
-    // alone even though it would be technically safe to remove too.
-    const result = compressAggressive("local unused = 5");
+    // unused-variable-elimination pass -- that's a separate, deliberately
+    // distinct pass (see remove-unused-locals.ts and its tests), which
+    // this test disables to isolate propagation's own boundary.
+    const result = compressAggressive("local unused = 5", { removeUnusedLocals: false });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toBe("local a=5");
