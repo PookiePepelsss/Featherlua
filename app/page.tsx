@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { compressAggressive } from "@/lib/luau/compress-aggressive";
+import { compressAggressive, DEFAULT_AGGRESSIVE_OPTIONS, type AggressiveOptions } from "@/lib/luau/compress-aggressive";
 
 const compoundSymbols = [
   "...", "..=", "//=", "==", "~=", "<=", ">=", "+=", "-=", "*=", "/=",
@@ -229,13 +229,18 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState<Mode>("safe");
   const [error, setError] = useState<string | null>(null);
+  const [options, setOptions] = useState<AggressiveOptions>(DEFAULT_AGGRESSIVE_OPTIONS);
+
+  function toggleOption(key: keyof AggressiveOptions) {
+    setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
 
   function compress() {
     if (mode === "safe") {
       setOutput(compressSource(source));
       setError(null);
     } else {
-      const result = compressAggressive(source);
+      const result = compressAggressive(source, options);
       if (result.ok) {
         setOutput(result.output);
         setError(null);
@@ -286,6 +291,44 @@ export default function Home() {
           aria-invalid={error ? true : undefined}
         />
       </section>
+
+      {mode === "aggressive" && (
+        <fieldset className="options" aria-label="Aggressive mode passes">
+          <legend className="srOnly">Aggressive mode passes</legend>
+          <label>
+            <input
+              type="checkbox"
+              checked={options.rename}
+              onChange={() => toggleOption("rename")}
+            />
+            Rename locals
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={options.foldConstants}
+              onChange={() => toggleOption("foldConstants")}
+            />
+            Fold constants
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={options.propagateConstants}
+              onChange={() => toggleOption("propagateConstants")}
+            />
+            Propagate constants
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={options.stripTypes}
+              onChange={() => toggleOption("stripTypes")}
+            />
+            Strip types
+          </label>
+        </fieldset>
+      )}
 
       <div className="actions" aria-label="Actions">
         <div className="modeToggle" role="radiogroup" aria-label="Compression mode">
