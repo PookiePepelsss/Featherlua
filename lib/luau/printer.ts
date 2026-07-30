@@ -271,6 +271,27 @@ export class Printer {
     this.printExpr(target, 0);
   }
 
+  // Prints the base of a suffix chain (the `object`/`callee` of an
+  // IndexExpr/MemberExpr/CallExpr/MethodCallExpr). Per Lua/Luau grammar,
+  // only a `prefixexp` (Name | '(' exp ')' | prefixexp suffix) can be
+  // indexed/called/method-called -- a table constructor, string literal,
+  // function expression, binary/unary expression, etc. is NOT valid there
+  // without parens, regardless of whether those parens would otherwise be
+  // "redundant" for precedence purposes. `printExpr`'s general ParenExpr
+  // handling deliberately drops cosmetic parens (see its comment); this
+  // narrower path exists specifically to NOT do that in a suffix-base
+  // position, where dropping them can turn valid code into a parse error
+  // (`({a=1}).a` -> `{a=1}.a`, `("s"):sub(1)` -> `"s":sub(1)`, both invalid).
+  private printPrefixExprBase(expr: Expr) {
+    if (expr.type === "ParenExpr") {
+      this.emit("(");
+      this.printExpr(expr.expr, 0);
+      this.emit(")");
+      return;
+    }
+    this.printExpr(expr, ATOM_PRECEDENCE);
+  }
+
   private printExpr(expr: Expr, minPrecedence: number) {
     if (expr.type === "ParenExpr") {
       // Parens are only semantically load-bearing around something that can
@@ -331,24 +352,24 @@ export class Printer {
         this.emitName(expr.name, expr.symbolId);
         break;
       case "IndexExpr":
-        this.printExpr(expr.object, ATOM_PRECEDENCE);
+        this.printPrefixExprBase(expr.object);
         this.emit("[");
         this.printExpr(expr.index, 0);
         this.emit("]");
         break;
       case "MemberExpr":
-        this.printExpr(expr.object, ATOM_PRECEDENCE);
+        this.printPrefixExprBase(expr.object);
         this.emit(".");
         this.emit(expr.name);
         break;
       case "CallExpr":
-        this.printExpr(expr.callee, ATOM_PRECEDENCE);
+        this.printPrefixExprBase(expr.callee);
         this.emit("(");
         this.emitList(expr.args, (a) => this.printExpr(a, 0));
         this.emit(")");
         break;
       case "MethodCallExpr":
-        this.printExpr(expr.object, ATOM_PRECEDENCE);
+        this.printPrefixExprBase(expr.object);
         this.emit(":");
         this.emit(expr.method);
         this.emit("(");

@@ -60,8 +60,7 @@ export function tokenize(source: string): LexResult {
 
     for (;;) {
       if (cursor >= source.length) {
-        emit("InterpStringSegment", source.slice(segStart, cursor), segStart, cursor, { isFirst, isLast: true });
-        return;
+        fail("Unterminated interpolated string", start);
       }
       const char = source[cursor];
       if (char === "\\") {
@@ -107,7 +106,9 @@ export function tokenize(source: string): LexResult {
       }
       if (source.startsWith("--", cursor)) {
         const start = cursor;
-        cursor = scanComment(source, cursor);
+        const end = scanComment(source, cursor);
+        if (end === -1) fail("Unterminated long comment", start);
+        cursor = end;
         const comment = source.slice(start, cursor);
         if (comment.startsWith("--!") || LICENSE_RE.test(comment)) protectedComments.push(comment);
         continue;
@@ -120,7 +121,9 @@ export function tokenize(source: string): LexResult {
     const start = cursor;
 
     if (char === "'" || char === '"') {
-      cursor = scanQuoted(source, cursor, char);
+      const end = scanQuoted(source, cursor, char);
+      if (end === -1) fail("Unterminated string", start);
+      cursor = end;
       emit("String", source.slice(start, cursor), start, cursor);
       return;
     }
@@ -131,7 +134,9 @@ export function tokenize(source: string): LexResult {
     if (char === "[") {
       const bracket = longBracket(source, cursor);
       if (bracket) {
-        cursor = scanLongBracket(source, bracket.body, bracket.level);
+        const end = scanLongBracket(source, bracket.body, bracket.level);
+        if (end === -1) fail("Unterminated long string", start);
+        cursor = end;
         emit("LongString", source.slice(start, cursor), start, cursor);
         return;
       }

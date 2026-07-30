@@ -31,12 +31,16 @@ export function longBracket(source: string, start: number) {
   return { level: cursor - start - 1, body: cursor + 1 };
 }
 
+// Returns -1 if the closing bracket is never found (unterminated long
+// string/comment) so callers can report it as a parse error instead of
+// silently treating the rest of the source as the string's body.
 export function scanLongBracket(source: string, body: number, level: number) {
   const closer = `]${"=".repeat(level)}]`;
   const end = source.indexOf(closer, body);
-  return end === -1 ? source.length : end + closer.length;
+  return end === -1 ? -1 : end + closer.length;
 }
 
+// Returns -1 if the closing quote is never found (unterminated string).
 export function scanQuoted(source: string, start: number, quote: string) {
   let cursor = start + 1;
   while (cursor < source.length) {
@@ -44,7 +48,7 @@ export function scanQuoted(source: string, start: number, quote: string) {
     else if (source[cursor] === quote) return cursor + 1;
     else cursor += 1;
   }
-  return source.length;
+  return -1;
 }
 
 export function scanNumber(source: string, start: number) {
@@ -93,6 +97,8 @@ export function scanNumber(source: string, start: number) {
 
 // Finds the end of a long comment/line comment starting at `cursor` (which
 // must point at the first `-` of `--`). Does not classify or collect it.
+// Returns -1 if a long comment is unterminated (line comments can never be
+// unterminated -- EOF always ends them).
 export function scanComment(source: string, cursor: number) {
   const bracket = longBracket(source, cursor + 2);
   if (bracket) return scanLongBracket(source, bracket.body, bracket.level);
