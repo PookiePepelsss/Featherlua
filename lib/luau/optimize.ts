@@ -46,6 +46,104 @@ function asNumberLiteral(expr: Expr): number | undefined {
   return parseLuauNumber(expr.raw);
 }
 
+function boolNode(v: boolean): Expr {
+  return v ? { type: "TrueExpr" } : { type: "FalseExpr" };
+}
+
+type LiteralKind = "number" | "string" | "boolean" | "nil";
+
+function literalKind(expr: Expr): LiteralKind | undefined {
+  switch (expr.type) {
+    case "NumberExpr":
+      return "number";
+    case "StringExpr":
+      return "string";
+    case "TrueExpr":
+    case "FalseExpr":
+      return "boolean";
+    case "NilExpr":
+      return "nil";
+    default:
+      return undefined;
+  }
+}
+
+// Only nil and false are falsy in Lua -- 0 and "" are truthy, unlike JS.
+function literalTruthiness(expr: Expr): boolean | undefined {
+  if (expr.type === "NilExpr" || expr.type === "FalseExpr") return false;
+  if (expr.type === "TrueExpr" || expr.type === "NumberExpr" || expr.type === "StringExpr") return true;
+  return undefined;
+}
+
+// `==`/`~=` between literals of different fundamental Lua types are always
+// false/true respectively -- Lua never coerces across number/string/
+// boolean/nil for equality (no metatables involved for raw literals).
+// String==string is deliberately left unfolded: proving two escaped string
+// literals decode to different values isn't safe without a full escape
+// decoder (`"\65"` and `"A"` are different raw text but the same string).
+function foldEquality(left: Expr, right: Expr, isEq: boolean): Expr | undefined {
+  const lk = literalKind(left);
+  const rk = literalKind(right);
+  if (!lk || !rk) return undefined;
+  if (lk !== rk) return boolNode(!isEq);
+  if (lk === "number") {
+    const a = asNumberLiteral(left);
+    const b = asNumberLiteral(right);
+    if (a === undefined || b === undefined) return undefined;
+    return boolNode(isEq ? a === b : a !== b);
+  }
+  if (lk === "boolean") {
+    const a = left.type === "TrueExpr";
+    const b = right.type === "TrueExpr";
+    return boolNode(isEq ? a === b : a !== b);
+  }
+  if (lk === "nil") return boolNode(isEq);
+  return undefined; // string==string
+}
+
+// `<`/`<=`/`>`/`>=` only fold between two numbers -- Lua allows ordering
+// comparisons between two numbers or two strings (byte-wise), never mixed
+// types (that's a runtime error, not a boolean, so must never be folded to
+// one), and string ordering has the same escape-decoding risk as equality.
+function foldNumericComparison(left: Expr, right: Expr, op: string): Expr | undefined {
+  const a = asNumberLiteral(left);
+  const b = asNumberLiteral(right);
+  if (a === undefined || b === undefined) return undefined;
+  const result = op === "<" ? a < b : op === "<=" ? a <= b : op === ">" ? a > b : a >= b;
+  return boolNode(result);
+}
+
+// Lua's `and`/`or` return one of their OPERANDS, never a synthesized
+// true/false: `a and b` is `a` if `a` is falsy, else `b`; `a or b` is `a`
+// if `a` is truthy, else `b`. Only the LEFT operand's truthiness needs to
+// be known (a literal); the right side is returned as-is, unevaluated and
+// unexamined, matching Lua's short-circuit evaluation exactly -- if `right`
+// has side effects, they only ever ran when Lua would have run them too.
+function foldLogical(left: Expr, right: Expr, op: "and" | "or"): Expr | undefined {
+  const truthy = literalTruthiness(left);
+  if (truthy === undefined) return undefined;
+  if (op === "and") return truthy ? right : left;
+  return truthy ? left : right;
+}
+
+// String literal `..` concatenation, done by splicing RAW token text
+// (never decoding escapes): each operand's raw content between its quotes
+// is copied verbatim into a new string with the same quote character.
+// Since both operands already lexed successfully, any backslash in their
+// raw content is definitely the start of a complete, self-contained escape
+// pair (scanQuoted's escape-skip logic guarantees this) -- concatenation
+// can't merge two fragments into a NEW escape sequence at the boundary.
+// Restricted to matching plain-quote strings (not long-bracket `[[...]]`,
+// not mismatched quote characters) to avoid needing any re-escaping logic.
+function foldConcat(left: Expr, right: Expr): Expr | undefined {
+  if (left.type !== "StringExpr" || right.type !== "StringExpr") return undefined;
+  const quote = left.raw[0];
+  if ((quote !== "'" && quote !== '"') || right.raw[0] !== quote) return undefined;
+  const leftInner = left.raw.slice(1, -1);
+  const rightInner = right.raw.slice(1, -1);
+  return { type: "StringExpr", raw: `${quote}${leftInner}${rightInner}${quote}` };
+}
+
 // Returns the AST node that printing-then-reparsing this value would
 // actually produce -- never a NumberExpr with a sign baked into `raw`
 // (the lexer can't scan a leading "-" as part of a number token, so that
@@ -107,6 +205,9 @@ function foldExpr(expr: Expr): Expr {
           const folded = foldToNumberNode(-v);
           if (folded) return folded;
         }
+      } else if (expr.operator === "not") {
+        const truthy = literalTruthiness(expr.operand);
+        if (truthy !== undefined) return boolNode(!truthy);
       }
       return expr;
     }
@@ -125,6 +226,27 @@ function foldExpr(expr: Expr): Expr {
           const folded = foldToNumberNode(result);
           if (folded) return folded;
         }
+        return expr;
+      }
+      if (expr.operator === "==" || expr.operator === "~=") {
+        const folded = foldEquality(expr.left, expr.right, expr.operator === "==");
+        if (folded) return folded;
+        return expr;
+      }
+      if (expr.operator === "<" || expr.operator === "<=" || expr.operator === ">" || expr.operator === ">=") {
+        const folded = foldNumericComparison(expr.left, expr.right, expr.operator);
+        if (folded) return folded;
+        return expr;
+      }
+      if (expr.operator === "and" || expr.operator === "or") {
+        const folded = foldLogical(expr.left, expr.right, expr.operator);
+        if (folded) return folded;
+        return expr;
+      }
+      if (expr.operator === "..") {
+        const folded = foldConcat(expr.left, expr.right);
+        if (folded) return folded;
+        return expr;
       }
       return expr;
     }

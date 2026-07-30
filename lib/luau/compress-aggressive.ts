@@ -14,11 +14,36 @@ export type CompressResult =
   | { ok: true; output: string }
   | { ok: false; error: { message: string; line: number; col: number } };
 
+// Every pass is independently toggleable and defaults to on (today's
+// behavior). Turning a pass off never changes what a LOWER pass does --
+// e.g. disabling `foldConstants` just means propagateConstants won't have
+// newly-exposed literals/dead branches to re-fold between its iterations,
+// not that propagation itself becomes unsafe.
+export interface AggressiveOptions {
+  /** Rename locals to short, scope-reuse-aware names. */
+  rename: boolean;
+  /** Fold literal arithmetic/logical/comparison/concat expressions and
+   * eliminate literal-true/false branches. */
+  foldConstants: boolean;
+  /** Substitute never-reassigned locals' values into their use sites. */
+  propagateConstants: boolean;
+  /** Drop type annotations, generics, and `type`/`export type` aliases
+   * (zero runtime effect in Luau -- erased at compile time). */
+  stripTypes: boolean;
+}
+
+export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
+  rename: true,
+  foldConstants: true,
+  propagateConstants: true,
+  stripTypes: true,
+};
+
 function parseError(message: string, line = 0, col = 0): CompressResult {
   return { ok: false, error: { message, line, col } };
 }
 
-// Every AST-simplifying transform Aggressive mode applies, up to but not
+// Every AST-simplifying transform Aggressive mode can apply, up to but not
 // including renaming/printing. Exported (not just used internally) so
 // tests can build an equivalent "expected" baseline by calling this exact
 // function instead of hand-reimplementing the pipeline -- two copies of
@@ -26,12 +51,12 @@ function parseError(message: string, line = 0, col = 0): CompressResult {
 // codebase's history when a new transform was added to one but not the
 // other. There must be exactly one source of truth for "what Aggressive
 // mode does to an AST before printing".
-export function transformForAggressive(chunk: Chunk): ResolvedProgram {
+export function transformForAggressive(chunk: Chunk, options: AggressiveOptions = DEFAULT_AGGRESSIVE_OPTIONS): ResolvedProgram {
   // Fold literal arithmetic and eliminate literal-true/false branches
   // before scope resolution -- both are pure AST simplifications that need
   // no symbol information, and running them first means the (possibly
   // smaller) simplified tree is what gets resolved/renamed/printed.
-  optimize(chunk);
+  if (options.foldConstants) optimize(chunk);
   const resolved = resolveScopes(chunk);
   // Propagate locals that are provably never reassigned (proven by
   // scanning every assignment target in the program, not by trusting a
@@ -41,18 +66,23 @@ export function transformForAggressive(chunk: Chunk): ResolvedProgram {
   // once DEBUG's value is substituted into the condition. Bounded rather
   // than a bare `while(true)` as a defensive guard against any unforeseen
   // non-termination; in practice this converges in 1-3 rounds, since each
-  // round strictly shrinks the remaining candidate pool.
-  for (let i = 0; i < 20; i += 1) {
-    const changed = propagateConstants(resolved);
-    if (!changed) break;
-    optimize(resolved.chunk);
+  // round strictly shrinks the remaining candidate pool. Looping without
+  // re-folding is pointless (nothing removes assignment statements between
+  // rounds except optimize()'s dead-branch elimination), so a single round
+  // suffices when foldConstants is off.
+  if (options.propagateConstants) {
+    for (let i = 0; i < 20; i += 1) {
+      const changed = propagateConstants(resolved);
+      if (!changed || !options.foldConstants) break;
+      optimize(resolved.chunk);
+    }
   }
   // Luau types are erased at compile time -- dropping them can never change
   // runtime behavior, only how much survives for static analysis/IDE
   // tooling on the *output*. Stripped before printing (not just skipped by
   // the printer) so self-validation below compares apples to apples: the
   // reparsed output naturally has no type spans either.
-  stripTypeInfo(resolved.chunk);
+  if (options.stripTypes) stripTypeInfo(resolved.chunk);
   return resolved;
 }
 
@@ -64,7 +94,8 @@ export function transformForAggressive(chunk: Chunk): ResolvedProgram {
 // of defense that would have caught real bugs found in this codebase (see
 // regressions.test.ts) before they ever reached a user. On any failure
 // here we refuse to return the (broken) output rather than shipping it.
-export function compressAggressive(source: string): CompressResult {
+export function compressAggressive(source: string, options: Partial<AggressiveOptions> = {}): CompressResult {
+  const opts: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
   let parsed;
   try {
     parsed = parse(source);
@@ -74,8 +105,8 @@ export function compressAggressive(source: string): CompressResult {
   }
 
   const { chunk, protectedComments } = parsed;
-  const resolved = transformForAggressive(chunk);
-  const renameMap = computeRenameMap(resolved);
+  const resolved = transformForAggressive(chunk, opts);
+  const renameMap = opts.rename ? computeRenameMap(resolved) : undefined;
   const printed = print(chunk, renameMap);
 
   let reverified;
