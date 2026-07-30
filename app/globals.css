@@ -63,11 +63,35 @@ textarea {
 
 textarea::placeholder { color: var(--muted); }
 textarea:focus { border-color: #555555; }
+textarea[aria-invalid="true"] { border-color: #ff6a6a; color: #ff9b9b; }
 
 .actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.modeToggle {
+  display: flex;
+  gap: 2px;
+  margin-right: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.modeToggle button {
+  min-width: 0;
+  min-height: 32px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+}
+
+.modeToggle button.modeActive {
+  background: var(--line);
+  color: var(--text);
 }
 
 button {

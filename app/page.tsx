@@ -1,11 +1,27 @@
 "use client";
 
 import { useState } from "react";
+import { compressAggressive } from "@/lib/luau/compress-aggressive";
 
 const compoundSymbols = [
   "...", "..=", "//=", "==", "~=", "<=", ">=", "+=", "-=", "*=", "/=",
   "%=", "^=", "::", "->", "//", "..",
 ];
+const compoundSymbolSet = new Set(compoundSymbols);
+const compoundSymbolsByFirstChar = new Map<string, string[]>();
+for (const symbol of compoundSymbols) {
+  const key = symbol[0];
+  const list = compoundSymbolsByFirstChar.get(key);
+  if (list) list.push(symbol);
+  else compoundSymbolsByFirstChar.set(key, [symbol]);
+}
+
+const WHITESPACE_RE = /\s/;
+const DIGIT_RE = /\d/;
+const IDENT_START_RE = /[A-Za-z_-￿]/;
+const IDENT_CONTINUE_RE = /[A-Za-z0-9_-￿]/;
+const NEWLINE_RE = /[\r\n]/;
+const LICENSE_RE = /@license|@preserve|copyright|spdx/i;
 
 function longBracket(source: string, start: number) {
   if (source[start] !== "[") return null;
@@ -51,7 +67,7 @@ function scanNumber(source: string, start: number) {
     takeExponent("e", "E");
     return cursor;
   }
-  if (/^0[xX]/.test(source.slice(cursor, cursor + 2))) {
+  if (source[cursor] === "0" && (source[cursor + 1] === "x" || source[cursor + 1] === "X")) {
     cursor += 2;
     takeDigits(/[0-9a-fA-F]/);
     if (source[cursor] === "." && source[cursor + 1] !== ".") {
@@ -61,7 +77,7 @@ function scanNumber(source: string, start: number) {
     takeExponent("p", "P");
     return cursor;
   }
-  if (/^0[bB]/.test(source.slice(cursor, cursor + 2))) {
+  if (source[cursor] === "0" && (source[cursor + 1] === "b" || source[cursor + 1] === "B")) {
     cursor += 2;
     takeDigits(/[01]/);
     return cursor;
@@ -95,7 +111,7 @@ function scanInterpolationExpression(source: string, start: number) {
       const bracket = longBracket(source, cursor + 2);
       if (bracket) cursor = scanLongBracket(source, bracket.body, bracket.level);
       else {
-        const lineEnd = source.slice(cursor).search(/[\r\n]/);
+        const lineEnd = source.slice(cursor).search(NEWLINE_RE);
         cursor = lineEnd === -1 ? source.length : cursor + lineEnd;
       }
       continue;
@@ -123,29 +139,29 @@ function scanInterpolationExpression(source: string, start: number) {
 function needsSpace(left: string, right: string) {
   const leftEnd = left.at(-1) ?? "";
   const rightStart = right[0] ?? "";
-  const word = /[A-Za-z0-9_\u0080-\uFFFF]/;
-  if (word.test(leftEnd) && word.test(rightStart)) return true;
-  if (/\d/.test(leftEnd) && rightStart === ".") return true;
-  if (leftEnd === "." && /\d/.test(rightStart)) return true;
+  if (IDENT_CONTINUE_RE.test(leftEnd) && IDENT_CONTINUE_RE.test(rightStart)) return true;
+  if (DIGIT_RE.test(leftEnd) && rightStart === ".") return true;
+  if (leftEnd === "." && DIGIT_RE.test(rightStart)) return true;
   if (leftEnd === "-" && rightStart === "-") return true;
   if (leftEnd === "[" && (rightStart === "[" || rightStart === "=")) return true;
-  return compoundSymbols.includes(left + right);
+  return compoundSymbolSet.has(left + right);
 }
 
 function compressSource(source: string) {
-  const tokens: string[] = [];
+  const outputParts: string[] = [];
   const protectedComments: string[] = [];
+  let previousToken = "";
   let cursor = 0;
 
   if (source.startsWith("#!")) {
-    const end = source.search(/[\r\n]/);
+    const end = source.search(NEWLINE_RE);
     protectedComments.push(source.slice(0, end === -1 ? source.length : end));
     cursor = end === -1 ? source.length : end;
   }
 
   while (cursor < source.length) {
     const char = source[cursor];
-    if (/\s/.test(char)) {
+    if (WHITESPACE_RE.test(char)) {
       cursor += 1;
       continue;
     }
@@ -155,11 +171,11 @@ function compressSource(source: string) {
       const bracket = longBracket(source, cursor + 2);
       if (bracket) cursor = scanLongBracket(source, bracket.body, bracket.level);
       else {
-        const lineEnd = source.slice(cursor).search(/[\r\n]/);
+        const lineEnd = source.slice(cursor).search(NEWLINE_RE);
         cursor = lineEnd === -1 ? source.length : cursor + lineEnd;
       }
       const comment = source.slice(start, cursor);
-      if (comment.startsWith("--!") || /@license|@preserve|copyright|spdx/i.test(comment)) {
+      if (comment.startsWith("--!") || LICENSE_RE.test(comment)) {
         protectedComments.push(comment);
       }
       continue;
@@ -173,38 +189,61 @@ function compressSource(source: string) {
       cursor = bracket
         ? scanLongBracket(source, bracket.body, bracket.level)
         : cursor + 1;
-    } else if (/\d/.test(char) || (char === "." && /\d/.test(source[cursor + 1] ?? ""))) {
+    } else if (DIGIT_RE.test(char) || (char === "." && DIGIT_RE.test(source[cursor + 1] ?? ""))) {
       cursor = scanNumber(source, cursor);
-    } else if (/[A-Za-z_\u0080-\uFFFF]/.test(char)) {
+    } else if (IDENT_START_RE.test(char)) {
       cursor += 1;
-      while (cursor < source.length && /[A-Za-z0-9_\u0080-\uFFFF]/.test(source[cursor])) {
+      while (cursor < source.length && IDENT_CONTINUE_RE.test(source[cursor])) {
         cursor += 1;
       }
     } else {
-      const symbol = compoundSymbols.find((value) => source.startsWith(value, cursor));
-      cursor += symbol?.length ?? 1;
+      const candidates = compoundSymbolsByFirstChar.get(char);
+      let matched: string | undefined;
+      if (candidates) {
+        for (const candidate of candidates) {
+          if (source.startsWith(candidate, cursor)) {
+            matched = candidate;
+            break;
+          }
+        }
+      }
+      cursor += matched?.length ?? 1;
     }
-    tokens.push(source.slice(start, cursor));
+
+    const token = source.slice(start, cursor);
+    if (previousToken && needsSpace(previousToken, token)) outputParts.push(" ");
+    outputParts.push(token);
+    previousToken = token;
   }
 
-  let output = "";
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    const previous = tokens[index - 1];
-    if (previous && needsSpace(previous, token)) output += " ";
-    output += token;
-  }
+  let output = outputParts.join("");
   if (protectedComments.length) output = `${protectedComments.join("\n")}\n${output}`;
   return output.trim();
 }
+
+type Mode = "safe" | "aggressive";
 
 export default function Home() {
   const [source, setSource] = useState("");
   const [output, setOutput] = useState("");
   const [copied, setCopied] = useState(false);
+  const [mode, setMode] = useState<Mode>("safe");
+  const [error, setError] = useState<string | null>(null);
 
   function compress() {
-    setOutput(compressSource(source));
+    if (mode === "safe") {
+      setOutput(compressSource(source));
+      setError(null);
+    } else {
+      const result = compressAggressive(source);
+      if (result.ok) {
+        setOutput(result.output);
+        setError(null);
+      } else {
+        setOutput("");
+        setError(result.error.message);
+      }
+    }
     setCopied(false);
   }
 
@@ -240,19 +279,38 @@ export default function Home() {
         <label className="srOnly" htmlFor="output">Output</label>
         <textarea
           id="output"
-          value={output}
+          value={error ?? output}
           readOnly
           spellCheck={false}
           placeholder="Output"
+          aria-invalid={error ? true : undefined}
         />
       </section>
 
       <div className="actions" aria-label="Actions">
+        <div className="modeToggle" role="radiogroup" aria-label="Compression mode">
+          <button
+            type="button"
+            className={mode === "safe" ? "modeActive" : undefined}
+            aria-pressed={mode === "safe"}
+            onClick={() => setMode("safe")}
+          >
+            Safe
+          </button>
+          <button
+            type="button"
+            className={mode === "aggressive" ? "modeActive" : undefined}
+            aria-pressed={mode === "aggressive"}
+            onClick={() => setMode("aggressive")}
+          >
+            Aggressive
+          </button>
+        </div>
         <button className="primary" onClick={compress} disabled={!source.trim()}>
           Compress
         </button>
-        <button onClick={copyOutput} disabled={!output}>{copied ? "Copied" : "Copy"}</button>
-        <button onClick={downloadOutput} disabled={!output}>Download</button>
+        <button onClick={copyOutput} disabled={!output || Boolean(error)}>{copied ? "Copied" : "Copy"}</button>
+        <button onClick={downloadOutput} disabled={!output || Boolean(error)}>Download</button>
       </div>
     </main>
   );

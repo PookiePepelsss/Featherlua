@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
-    "start": "vinext start"
+    "start": "vinext start",
+    "test": "vitest run"
   },
   "dependencies": {
     "next": "16.2.6",
@@ -26,6 +27,7 @@
     "typescript": "5.9.3",
     "vinext": "0.0.50",
     "vite": "8.0.13",
+    "vitest": "^4.1.10",
     "wrangler": "4.92.0"
   },
   "type": "module"

@@ -1,0 +1,10 @@
+local a, b, c, d = 1, 2, 3, 4
+local r1 = a - b - c
+local r2 = a - (b - c)
+local r3 = -a ^ 2
+local r4 = (-a) ^ 2
+local r5 = 2 ^ 3 ^ 4
+local r6 = not a and b or c
+local r7 = a .. b .. c
+local r8 = a + b * c - d / 2 % 3
+local r9 = -a * b
