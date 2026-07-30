@@ -1,17 +1,11 @@
 import type { Chunk, Expr, Stat } from "./ast";
 
-// Narrow, provably-safe optimizations that reduce actual runtime work (not
-// just byte count): folding literal arithmetic, and removing branches whose
-// condition is a literal `true`/`false`. Both matter most when the folded
-// expression or eliminated check sits inside a loop (re-evaluated every
-// iteration otherwise). Deliberately does NOT do constant propagation
-// (tracking that a *variable* always holds a literal value), string
-// escape-aware folding, or folding `%`/`//`/`^` -- each adds real
-// correctness risk (Lua's `%` is floor-mod, not JS's truncating `%`; `^`
-// isn't guaranteed bit-identical between JS and Lua's libm `pow`; string
-// escapes need a full, easy-to-get-wrong decoder) for marginal payoff.
-// Runs on the raw parsed AST, before scope resolution -- folding literals
-// and removing whole branches needs no symbol/scope information.
+// Folds literal expressions and removes dead branches/loops. Runs on the
+// raw parsed AST before scope resolution -- none of this needs symbol
+// info. Constant propagation (tracking that a variable always holds a
+// literal) lives separately in constant-propagate.ts. Never folds `%`,
+// `//`, or `^` (Lua's `%` is floor-mod, JS's is truncating and disagrees
+// on mixed signs; `^` isn't guaranteed bit-identical to Lua's libm `pow`).
 
 function parseLuauNumber(raw: string): number | undefined {
   const clean = raw.replace(/_/g, "");
@@ -44,6 +38,19 @@ function formatLuauNumber(n: number): string {
 function asNumberLiteral(expr: Expr): number | undefined {
   if (expr.type !== "NumberExpr") return undefined;
   return parseLuauNumber(expr.raw);
+}
+
+// Re-renders a number literal in its shortest round-tripping form
+// (`1.500000` -> `1.5`, `1_000_000` -> `1000000`, `0xA` -> `10`), applied
+// to every literal, not just fold results. Only replaces when strictly
+// shorter, so this can never grow output; non-finite/unparseable values
+// are left untouched (no valid Luau syntax for `Infinity`/`NaN` to render
+// into, and the original text is already correct as-is either way).
+function canonicalizeNumber(raw: string): string {
+  const value = parseLuauNumber(raw);
+  if (value === undefined || !Number.isFinite(value) || Object.is(value, -0)) return raw;
+  const formatted = formatLuauNumber(value);
+  return formatted.length < raw.length ? formatted : raw;
 }
 
 function boolNode(v: boolean): Expr {
@@ -166,9 +173,11 @@ function foldExpr(expr: Expr): Expr {
     case "TrueExpr":
     case "FalseExpr":
     case "VarargExpr":
-    case "NumberExpr":
     case "StringExpr":
     case "Identifier":
+      return expr;
+    case "NumberExpr":
+      expr.raw = canonicalizeNumber(expr.raw);
       return expr;
     case "InterpolatedStringExpr":
       expr.parts = expr.parts.map((part) => (typeof part === "string" ? part : foldExpr(part)));

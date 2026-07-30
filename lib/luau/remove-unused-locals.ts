@@ -2,30 +2,21 @@ import type { Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 
 // Removes `local` declarations (and unused `local function` definitions)
-// that are referenced nowhere in the program and whose initializer can't
-// possibly have a side effect or throw. This is a separate, more general
-// pass from constant-propagate.ts's dead-declaration cleanup: propagation
-// only drops a declaration it actually inlined somewhere; this drops one
-// that was simply never used at all, regardless of whether its value
-// would have been propagatable.
+// referenced nowhere, when the initializer can't possibly error or have a
+// side effect. Separate from constant-propagate.ts's dead-declaration
+// cleanup, which only drops what it actually inlined somewhere -- this
+// drops anything simply never used, propagatable or not.
 //
-// "Side-effect-free" is deliberately conservative -- broader than just
-// scalar literals, but still excludes anything that could observably do
-// something or error when evaluated:
-// - literals, identifier reads, function *definitions* (not calls -- the
-//   body doesn't execute until called), and table constructors built
-//   entirely from pure fields are allowed.
-// - arithmetic/comparison/concat and calls are excluded: Lua operators can
-//   throw at runtime on incompatible operand types (`1 < {}`, `1 + "x"`),
-//   and a call can do anything -- removing an unused-but-erroring or
-//   unused-but-side-effecting expression would silently change behavior
-//   (a program that used to error, or print, now does neither).
+// "Side-effect-free" allows literals, identifier reads, function
+// *definitions* (not calls -- the body doesn't run until called), and
+// tables built from pure fields. It excludes arithmetic/comparison/concat
+// and calls: Lua operators can throw on incompatible types (`1 < {}`,
+// `1 + "x"`), and a call can do anything, so removing one would risk
+// silently changing behavior.
 //
-// Only single-name, at-most-single-init `local` statements are candidates
-// (`local x = f(), g()` still calls g() for its side effect even though
-// only f()'s result is kept -- dropping the whole statement would drop
-// that call too), matching the conservative scope used elsewhere in this
-// codebase (constant-propagate.ts, dead-branch elimination in optimize.ts).
+// Only single-name, at-most-single-init locals qualify (`local x = f(),
+// g()` still calls g() for its side effect even though only f()'s result
+// is kept), matching the same conservative scope used elsewhere.
 export function removeUnusedLocals(resolved: ResolvedProgram): boolean {
   const refCounts = new Map<number, number>();
   countReferences(resolved.chunk.body, refCounts);
@@ -226,12 +217,9 @@ function isUnusedLocalFunction(stat: Stat, counts: Map<number, number>): boolean
   return stat.type === "LocalFunctionStat" && isUnused(stat.symbolId, counts);
 }
 
-// Recurses into every FunctionExpr body reachable from this statement --
-// both the statement-level forms (LocalFunctionStat/FunctionDeclStat) and
-// any FunctionExpr nested inside an expression position (a value in a
-// LocalStat/AssignStat, a call argument, a table field, ...), which is
-// where an unused local inside an assigned-but-not-declared closure
-// (`local f = function() local dead = 1 end`) would otherwise be missed.
+// Recurses into every FunctionExpr body reachable from this statement,
+// including ones nested in expression position (`local f = function()
+// local dead = 1 end`), not just the statement-level forms.
 function stripUnusedInStat(stat: Stat, counts: Map<number, number>, onChange: () => void) {
   const visit = (e: Expr) => stripUnusedInExpr(e, counts, onChange);
   switch (stat.type) {

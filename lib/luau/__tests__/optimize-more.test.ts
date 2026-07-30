@@ -11,6 +11,40 @@ function output(source: string): string {
   return result.output;
 }
 
+describe("optimize: number literal canonicalization (shortest round-tripping form)", () => {
+  it("shortens trailing/leading zeros", () => {
+    expect(output("local x = 1.500000")).toBe("local a=1.5");
+    expect(output("local x = 0.100000")).toBe("local a=0.1");
+    expect(output("local x = 1.0")).toBe("local a=1");
+  });
+
+  it("strips underscore digit separators when shorter", () => {
+    expect(output("local x = 1_000_000")).toBe("local a=1000000");
+  });
+
+  it("converts hex to decimal when decimal is shorter", () => {
+    expect(output("local x = 0xA")).toBe("local a=10");
+    expect(output("local x = 0x1F")).toBe("local a=31");
+  });
+
+  it("leaves an already-minimal literal untouched", () => {
+    expect(output("local x = 100")).toBe("local a=100");
+  });
+
+  it("leaves a literal untouched when the canonical form isn't shorter", () => {
+    expect(output("local x = 1e10")).toBe("local a=1e10");
+  });
+
+  it("never renders a non-finite overflowed literal as invalid Lua syntax", () => {
+    // 1e400 overflows a double to Infinity, same in Lua and JS; there's no
+    // literal syntax for "Infinity" so the original text must survive.
+    const result = compressAggressive("local x = 1e400\nprint(x)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toContain("1e400");
+  });
+});
+
 describe("optimize: logical short-circuit folding (and/or return an OPERAND, not true/false)", () => {
   it("`false and X` folds to the falsy left operand itself, not `false`", () => {
     expect(output("local x = nil and print(1)")).toBe("local a=nil");

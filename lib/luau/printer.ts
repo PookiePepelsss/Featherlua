@@ -235,14 +235,10 @@ export class Printer {
         this.emit(stat.label);
         return;
       case "LabelStat":
-        // Always precede a label with `;`. Without it, a preceding
-        // expression-ending statement (local/assign/call/...) with no
-        // separator could have its trailing simpleexp greedily absorb this
-        // label's opening `::` as a type assertion (asexp ::= simpleexp
-        // ['::' Type]), stranding the label's closing `::` -- the same
-        // ambiguity documented in parser.test.ts. A leading `;` is always
-        // valid (an empty statement) even when not strictly needed, so this
-        // is a safe unconditional fix rather than a narrower heuristic.
+        // Always precede a label with `;`: a preceding expression-ending
+        // statement's trailing simpleexp could otherwise greedily absorb
+        // this label's opening `::` as a type assertion, stranding the
+        // closing `::` (see parser.test.ts). A leading `;` is always valid.
         this.emit(";");
         this.emit("::");
         this.emit(stat.name);
@@ -275,17 +271,10 @@ export class Printer {
     this.printExpr(target, 0);
   }
 
-  // Prints the base of a suffix chain (the `object`/`callee` of an
-  // IndexExpr/MemberExpr/CallExpr/MethodCallExpr). Per Lua/Luau grammar,
-  // only a `prefixexp` (Name | '(' exp ')' | prefixexp suffix) can be
-  // indexed/called/method-called -- a table constructor, string literal,
-  // function expression, binary/unary expression, etc. is NOT valid there
-  // without parens, regardless of whether those parens would otherwise be
-  // "redundant" for precedence purposes. `printExpr`'s general ParenExpr
-  // handling deliberately drops cosmetic parens (see its comment); this
-  // narrower path exists specifically to NOT do that in a suffix-base
-  // position, where dropping them can turn valid code into a parse error
-  // (`({a=1}).a` -> `{a=1}.a`, `("s"):sub(1)` -> `"s":sub(1)`, both invalid).
+  // Base of a suffix chain (`object`/`callee`). Only a `prefixexp` (Name |
+  // '(' exp ')' | prefixexp suffix) can be indexed/called there -- unlike
+  // printExpr's general ParenExpr handling, never drop these parens even
+  // when "redundant": `({a=1}).a` -> `{a=1}.a` is invalid syntax.
   private printPrefixExprBase(expr: Expr) {
     if (expr.type === "ParenExpr") {
       this.emit("(");
