@@ -1,23 +1,22 @@
 import type { Chunk, Expr, Stat } from "./ast";
 
-// Both hoist-repeated-access.ts and alias-repeated-global-calls.ts rest on
+// hoist-repeated-access.ts and alias-repeated-global-calls.ts both rest on
 // one assumption: reading a global has no side effect. That assumption
 // gets shaky specifically when a script has the means to give the global
 // environment a custom `__index` -- normal Roblox Lua doesn't expose
 // `_G`/`_ENV`/`getfenv`/`setfenv` at all, so referencing any of them, or a
-// known exploit-executor global-manipulation API, is itself a strong
-// signal this script's environment can't be trusted to behave like a
-// plain table. When any of these appear anywhere in the whole program,
-// both passes refuse to touch anything, regardless of whether the option
-// is on -- this is a blanket bail-out, not per-name filtering, because a
-// script that manipulates its OWN environment could just as easily affect
-// globals that look completely unrelated to where the manipulation
-// happens.
+// known exploit-executor global-manipulation API, is itself a signal this
+// script's environment can't be trusted to behave like a plain table.
+//
+// This doesn't change what either pass does -- the user's toggle is still
+// the only thing that decides that. compress-aggressive.ts uses it to
+// surface a warning alongside the output instead, so the decision to
+// enable these options on a script like that stays informed but stays the
+// user's.
 //
 // Deliberately narrow: ordinary `setmetatable` usage (the overwhelming
 // majority of real Luau OOP code) is NOT on this list -- it almost always
-// targets a local table, not the environment, and blocking on it would
-// gut these passes for nearly every real script for no safety benefit.
+// targets a local table, not the environment.
 const EXOTIC_ENVIRONMENT_SIGNALS = new Set([
   "_G",
   "_ENV",

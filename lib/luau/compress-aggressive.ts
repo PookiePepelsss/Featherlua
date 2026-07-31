@@ -15,9 +15,10 @@ import { hoistRepeatedStrings } from "./hoist-repeated-strings";
 import { mergeAdjacentLocals } from "./merge-adjacent-locals";
 import { mergeAdjacentAssigns } from "./merge-adjacent-assigns";
 import { aliasRepeatedGlobalCalls } from "./alias-repeated-global-calls";
+import { hasExoticEnvironmentSignal } from "./exotic-environment-guard";
 
 export type CompressResult =
-  | { ok: true; output: string }
+  | { ok: true; output: string; warning?: string }
   | { ok: false; error: { message: string; line: number; col: number } };
 
 // Independently toggleable; disabling one never makes another unsafe, only
@@ -131,6 +132,16 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
   }
 
   const { chunk, protectedComments } = parsed;
+  // Checked on the freshly parsed tree, before any pass has a chance to
+  // touch it -- purely informational, doesn't change what runs. See
+  // exotic-environment-guard.ts for why this specifically matters for
+  // hoistRepeatedAccess/aliasRepeatedGlobalCalls and not the other passes.
+  const warning =
+    (opts.hoistRepeatedAccess || opts.aliasRepeatedGlobalCalls) && hasExoticEnvironmentSignal(chunk)
+      ? "This script references an environment-manipulation API (_G, getfenv, hookmetamethod, ...). " +
+        "\"Hoist repeated access\" and \"Alias repeated global calls\" assume reading a global has no " +
+        "side effect, which may not hold here -- double-check the output if you're relying on either option."
+      : undefined;
   const resolved = transformForAggressive(chunk, opts);
   const renameMap = opts.rename ? computeRenameMap(resolved) : undefined;
   const printed = print(chunk, renameMap);
@@ -152,5 +163,5 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
 
   let output = printed;
   if (protectedComments.length) output = `${protectedComments.join("\n")}\n${output}`;
-  return { ok: true, output };
+  return warning ? { ok: true, output, warning } : { ok: true, output };
 }

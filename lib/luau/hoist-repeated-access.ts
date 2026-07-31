@@ -1,7 +1,6 @@
 import type { Chunk, Expr, Stat } from "./ast";
 import { parseLuauNumber } from "./optimize";
 import { isCallExpr, someBlock } from "./ast-search";
-import { hasExoticEnvironmentSignal } from "./exotic-environment-guard";
 
 // Opt-in, off by default: hoists a repeated `global.field.field...` read
 // out of a loop into a local computed once before it (caching
@@ -21,12 +20,7 @@ import { hasExoticEnvironmentSignal } from "./exotic-environment-guard";
 // unconditionally in the loop body count, never something behind an
 // `if` or nested loop; and chains are plain `Name.field.field...` only,
 // never a call or a computed `[...]` index.
-// Also refuses to do anything at all if the program references any known
-// environment-manipulation API anywhere (see exotic-environment-guard.ts)
-// -- a script that can give its own environment a custom `__index` could
-// affect globals nowhere near where that manipulation happens.
 export function hoistRepeatedGlobalAccess(chunk: Chunk): boolean {
-  if (hasExoticEnvironmentSignal(chunk)) return false;
   const unsafeNames = collectUnsafeBaseNames(chunk);
   const changedRef = { value: false };
   chunk.body = processBlock(chunk.body, unsafeNames, changedRef);

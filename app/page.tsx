@@ -229,6 +229,7 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState<Mode>("safe");
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [options, setOptions] = useState<AggressiveOptions>(DEFAULT_AGGRESSIVE_OPTIONS);
   const [stats, setStats] = useState<{ inputChars: number; inputBytes: number; outputChars: number; outputBytes: number } | null>(null);
 
@@ -242,6 +243,7 @@ export default function Home() {
 
   function compress() {
     let result: string | null = null;
+    setWarning(null);
     if (mode === "safe") {
       result = compressSource(source);
       setOutput(result);
@@ -252,6 +254,7 @@ export default function Home() {
         result = aggressiveResult.output;
         setOutput(result);
         setError(null);
+        setWarning(aggressiveResult.warning ?? null);
       } else {
         setOutput("");
         setError(aggressiveResult.error.message);
@@ -326,6 +329,12 @@ export default function Home() {
                 : `+${Math.round((stats.outputBytes / stats.inputBytes - 1) * 100)}%`}
             </span>
           )}
+        </div>
+      )}
+
+      {warning && (
+        <div className="warning" role="status">
+          {warning}
         </div>
       )}
 

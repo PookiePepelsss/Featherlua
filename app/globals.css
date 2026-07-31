@@ -104,6 +104,17 @@ textarea[aria-invalid="true"] { border-color: #ff6a6a; color: #ff9b9b; }
   animation: popIn 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+.warning {
+  border: 1px solid #7a5b12;
+  border-radius: 7px;
+  padding: 10px 14px;
+  background: #241d0a;
+  color: #e8c766;
+  font-size: 13px;
+  line-height: 1.5;
+  animation: fadeSlideIn 220ms ease;
+}
+
 .options {
   display: flex;
   flex-wrap: wrap;
