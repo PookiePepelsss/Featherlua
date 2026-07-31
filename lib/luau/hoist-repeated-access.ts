@@ -49,9 +49,11 @@ function chainBaseName(expr: Expr): string | undefined {
   return cur.type === "Identifier" ? cur.name : undefined;
 }
 
-// === whole-program scan: names that can never be trusted as a stable global ===
+// === whole-program scan: names that can never be trusted as a stable global
+// (also used by alias-repeated-global-calls.ts, which needs the exact same
+// guarantee for the same reason) ===
 
-function collectUnsafeBaseNames(chunk: Chunk): Set<string> {
+export function collectUnsafeBaseNames(chunk: Chunk): Set<string> {
   const names = new Set<string>();
 
   function addTargetBase(target: Expr) {

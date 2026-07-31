@@ -14,6 +14,7 @@ import { hoistRepeatedGlobalAccess } from "./hoist-repeated-access";
 import { hoistRepeatedStrings } from "./hoist-repeated-strings";
 import { mergeAdjacentLocals } from "./merge-adjacent-locals";
 import { mergeAdjacentAssigns } from "./merge-adjacent-assigns";
+import { aliasRepeatedGlobalCalls } from "./alias-repeated-global-calls";
 
 export type CompressResult =
   | { ok: true; output: string }
@@ -53,6 +54,11 @@ export interface AggressiveOptions {
    * custom `__index` metamethod with a side effect. See
    * hoist-repeated-access.ts for the full safety scoping. */
   hoistRepeatedAccess: boolean;
+  /** EXPERIMENTAL, off by default: alias a bare global function called 3+
+   * times in one scope (`print`, `warn`, ...) to a local. Rests on the
+   * same unverifiable assumption as hoistRepeatedAccess -- that reading
+   * the global has no side effect. See alias-repeated-global-calls.ts. */
+  aliasRepeatedGlobalCalls: boolean;
 }
 
 export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
@@ -65,6 +71,7 @@ export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   mergeAdjacentLocals: true,
   mergeAdjacentAssigns: true,
   hoistRepeatedStrings: true,
+  aliasRepeatedGlobalCalls: false,
 };
 
 function parseError(message: string, line = 0, col = 0): CompressResult {
@@ -81,6 +88,7 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
   // looks for candidates).
   if (options.foldConstants) optimize(chunk);
   if (options.hoistRepeatedAccess) hoistRepeatedGlobalAccess(chunk);
+  if (options.aliasRepeatedGlobalCalls) aliasRepeatedGlobalCalls(chunk, options.rename);
   if (options.hoistRepeatedStrings) hoistRepeatedStrings(chunk);
   const resolved = resolveScopes(chunk);
   // Looped: propagation and unused-local removal feed each other (removing

@@ -404,6 +404,14 @@ export default function Home() {
             />
             Hoist repeated access (experimental)
           </label>
+          <label title="Experimental: assumes reading the global has no side effect. Off by default.">
+            <input
+              type="checkbox"
+              checked={options.aliasRepeatedGlobalCalls}
+              onChange={() => toggleOption("aliasRepeatedGlobalCalls")}
+            />
+            Alias repeated global calls (experimental)
+          </label>
         </fieldset>
       )}
 
