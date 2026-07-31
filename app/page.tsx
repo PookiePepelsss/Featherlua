@@ -397,6 +397,14 @@ export default function Home() {
             />
             Merge adjacent assigns
           </label>
+          <label title="Experimental: assigning to a table field can invoke a custom __newindex, and merging changes the relative order two such handlers fire in. Off by default.">
+            <input
+              type="checkbox"
+              checked={options.mergeAdjacentAssignsAcrossFields}
+              onChange={() => toggleOption("mergeAdjacentAssignsAcrossFields")}
+            />
+            Merge adjacent field assigns (experimental)
+          </label>
           <label>
             <input
               type="checkbox"

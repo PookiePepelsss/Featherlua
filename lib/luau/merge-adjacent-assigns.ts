@@ -2,61 +2,88 @@ import type { AssignStat, Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 import { isCallExpr, someExpr } from "./ast-search";
 
-// `a=1 b=2` -> `a,b=1,2`. Only bare Identifier targets (never `t[k]=`, whose
-// index expression would need its own evaluation-order analysis), and
-// neither value may contain a call -- a call's side effect could
-// legitimately depend on running between the two original stores. Two more
-// guards: Lua evaluates every value in a multi-assignment before any store
-// happens, so `a=1 b=a+1` (b reads a's NEW value) would silently become
-// `a,b=1,a+1` reading the OLD value -- refused whenever the second value
-// references the first target's binding. And `a=1 a=2` assigning the same
-// binding twice in one merged statement is explicitly undefined in Lua, so
-// same-binding targets are refused too. Any miscategorization still fails
-// closed via compress-aggressive.ts's output re-validation.
-export function mergeAdjacentAssigns(resolved: ResolvedProgram): boolean {
+// `a=1 b=2` -> `a,b=1,2`. Only bare Identifier targets by default (never
+// `t[k]=`, whose index expression would need its own evaluation-order
+// analysis), and neither value may contain a call -- a call's side effect
+// could legitimately depend on running between the two original stores.
+// Two more guards: Lua evaluates every value in a multi-assignment before
+// any store happens, so `a=1 b=a+1` (b reads a's NEW value) would silently
+// become `a,b=1,a+1` reading the OLD value -- refused whenever the second
+// value reads the first target's binding. And `a=1 a=2` assigning the
+// same binding twice in one merged statement is explicitly undefined in
+// Lua, so same-binding targets are refused too. Any miscategorization
+// still fails closed via compress-aggressive.ts's output re-validation.
+//
+// `includeMemberTargets` (off by default, EXPERIMENTAL) additionally
+// allows `t.x=1 t.y=2` -> `t.x,t.y=1,2` for a plain-Identifier-based
+// field (`t.x`, never `t[k]` or `f().x`). This rests on an assumption the
+// self-validation backstop CANNOT catch, unlike every other pass here:
+// assigning to a table field can invoke a custom `__newindex`, and
+// merging changes the relative order two such handlers would fire in --
+// a real behavior difference invisible to a structural re-parse check,
+// which only confirms the output *parses* to an equivalent shape, not
+// that it *runs* the same. Table proxies/readonly wrappers using
+// `__newindex` are common enough in real Luau OOP code that this stays
+// opt-in.
+export function mergeAdjacentAssigns(resolved: ResolvedProgram, includeMemberTargets: boolean): boolean {
   let changed = false;
-  resolved.chunk.body = mergeBlock(resolved.chunk.body, () => {
+  resolved.chunk.body = mergeBlock(resolved.chunk.body, includeMemberTargets, () => {
     changed = true;
   });
   return changed;
 }
 
-function isPlainIdentifierTarget(stat: AssignStat): boolean {
-  return stat.targets.length === 1 && stat.targets[0].type === "Identifier";
+function isMergeableTarget(stat: AssignStat, includeMemberTargets: boolean): boolean {
+  if (stat.targets.length !== 1) return false;
+  const target = stat.targets[0];
+  if (target.type === "Identifier") return true;
+  return includeMemberTargets && target.type === "MemberExpr" && target.object.type === "Identifier";
+}
+
+// A comparable identity for an assignment target or a read of the same
+// shape (`Identifier` or plain `base.field` `MemberExpr`) -- undefined
+// for anything else (globals with no symbolId still get a name-based key
+// so two different-scope locals that happen to share a name never
+// collide with a global of the same name).
+function targetIdentity(expr: Expr): string | undefined {
+  if (expr.type === "Identifier") {
+    if (expr.symbolId !== undefined) return `s${expr.symbolId}`;
+    return expr.isGlobal === true ? `g:${expr.name}` : undefined;
+  }
+  if (expr.type === "MemberExpr") {
+    const baseId = targetIdentity(expr.object);
+    return baseId !== undefined ? `${baseId}.${expr.name}` : undefined;
+  }
+  return undefined;
 }
 
 function sameBinding(a: AssignStat, b: AssignStat): boolean {
-  const ta = a.targets[0];
-  const tb = b.targets[0];
-  if (ta.type !== "Identifier" || tb.type !== "Identifier") return false;
-  if (ta.symbolId !== undefined || tb.symbolId !== undefined) return ta.symbolId === tb.symbolId;
-  return ta.isGlobal === true && tb.isGlobal === true && ta.name === tb.name;
+  const ia = targetIdentity(a.targets[0]);
+  const ib = targetIdentity(b.targets[0]);
+  return ia !== undefined && ia === ib;
 }
 
-function referencesTarget(expr: Expr, target: AssignStat["targets"][0]): boolean {
-  if (target.type !== "Identifier") return false;
-  return someExpr(expr, (e) => {
-    if (e.type !== "Identifier") return false;
-    if (target.symbolId !== undefined) return e.symbolId === target.symbolId;
-    return e.isGlobal === true && target.isGlobal === true && e.name === target.name;
-  });
+function referencesTarget(expr: Expr, target: Expr): boolean {
+  const targetId = targetIdentity(target);
+  if (targetId === undefined) return false;
+  return someExpr(expr, (e) => targetIdentity(e) === targetId);
 }
 
-function canMerge(a: Stat, b: Stat): a is AssignStat {
+function canMerge(a: Stat, b: Stat, includeMemberTargets: boolean): a is AssignStat {
   if (a.type !== "AssignStat" || b.type !== "AssignStat") return false;
-  if (!isPlainIdentifierTarget(a) || !isPlainIdentifierTarget(b)) return false;
+  if (!isMergeableTarget(a, includeMemberTargets) || !isMergeableTarget(b, includeMemberTargets)) return false;
   if (a.values.length !== 1 || b.values.length !== 1) return false;
   if (someExpr(a.values[0], isCallExpr) || someExpr(b.values[0], isCallExpr)) return false;
   if (sameBinding(a, b)) return false;
   return !referencesTarget(b.values[0], a.targets[0]);
 }
 
-function mergeBlock(stats: Stat[], onChange: () => void): Stat[] {
-  const processed = stats.map((s) => mergeInStat(s, onChange));
+function mergeBlock(stats: Stat[], includeMemberTargets: boolean, onChange: () => void): Stat[] {
+  const processed = stats.map((s) => mergeInStat(s, includeMemberTargets, onChange));
   const out: Stat[] = [];
   for (const stat of processed) {
     const prev = out[out.length - 1];
-    if (prev && canMerge(prev, stat)) {
+    if (prev && canMerge(prev, stat, includeMemberTargets)) {
       const b = stat as AssignStat;
       prev.targets = prev.targets.concat(b.targets);
       prev.values = prev.values.concat(b.values);
@@ -68,18 +95,19 @@ function mergeBlock(stats: Stat[], onChange: () => void): Stat[] {
   return out;
 }
 
-function mergeInStat(stat: Stat, onChange: () => void): Stat {
-  const visit = (e: Expr) => mergeInExpr(e, onChange);
+function mergeInStat(stat: Stat, includeMemberTargets: boolean, onChange: () => void): Stat {
+  const visit = (e: Expr) => mergeInExpr(e, includeMemberTargets, onChange);
+  const block = (b: Stat[]) => mergeBlock(b, includeMemberTargets, onChange);
   switch (stat.type) {
     case "LocalStat":
       stat.init.forEach(visit);
       return stat;
     case "LocalFunctionStat":
-      stat.func.body = mergeBlock(stat.func.body, onChange);
+      stat.func.body = block(stat.func.body);
       return stat;
     case "FunctionDeclStat":
       visit(stat.target.base);
-      stat.func.body = mergeBlock(stat.func.body, onChange);
+      stat.func.body = block(stat.func.body);
       return stat;
     case "AssignStat":
       stat.targets.forEach(visit);
@@ -93,32 +121,32 @@ function mergeInStat(stat: Stat, onChange: () => void): Stat {
       visit(stat.call);
       return stat;
     case "DoStat":
-      stat.body = mergeBlock(stat.body, onChange);
+      stat.body = block(stat.body);
       return stat;
     case "WhileStat":
       visit(stat.cond);
-      stat.body = mergeBlock(stat.body, onChange);
+      stat.body = block(stat.body);
       return stat;
     case "RepeatStat":
-      stat.body = mergeBlock(stat.body, onChange);
+      stat.body = block(stat.body);
       visit(stat.cond);
       return stat;
     case "IfStat":
       for (const clause of stat.clauses) {
         visit(clause.cond);
-        clause.body = mergeBlock(clause.body, onChange);
+        clause.body = block(clause.body);
       }
-      if (stat.elseBody) stat.elseBody = mergeBlock(stat.elseBody, onChange);
+      if (stat.elseBody) stat.elseBody = block(stat.elseBody);
       return stat;
     case "NumericForStat":
       visit(stat.start);
       visit(stat.stop);
       if (stat.step) visit(stat.step);
-      stat.body = mergeBlock(stat.body, onChange);
+      stat.body = block(stat.body);
       return stat;
     case "GenericForStat":
       stat.exprs.forEach(visit);
-      stat.body = mergeBlock(stat.body, onChange);
+      stat.body = block(stat.body);
       return stat;
     case "ReturnStat":
       stat.args.forEach(visit);
@@ -128,8 +156,8 @@ function mergeInStat(stat: Stat, onChange: () => void): Stat {
   }
 }
 
-function mergeInExpr(expr: Expr, onChange: () => void): void {
-  const visit = (e: Expr) => mergeInExpr(e, onChange);
+function mergeInExpr(expr: Expr, includeMemberTargets: boolean, onChange: () => void): void {
+  const visit = (e: Expr) => mergeInExpr(e, includeMemberTargets, onChange);
   switch (expr.type) {
     case "InterpolatedStringExpr":
       for (const part of expr.parts) if (typeof part !== "string") visit(part);
@@ -150,7 +178,7 @@ function mergeInExpr(expr: Expr, onChange: () => void): void {
       expr.args.forEach(visit);
       return;
     case "FunctionExpr":
-      expr.body = mergeBlock(expr.body, onChange);
+      expr.body = mergeBlock(expr.body, includeMemberTargets, onChange);
       return;
     case "TableExpr":
       for (const field of expr.fields) {

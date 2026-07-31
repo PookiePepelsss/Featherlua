@@ -60,6 +60,13 @@ export interface AggressiveOptions {
    * same unverifiable assumption as hoistRepeatedAccess -- that reading
    * the global has no side effect. See alias-repeated-global-calls.ts. */
   aliasRepeatedGlobalCalls: boolean;
+  /** EXPERIMENTAL, off by default: lets mergeAdjacentAssigns also merge
+   * plain `t.x=1 t.y=2` field targets, not just bare identifiers. Assigning
+   * to a table field can invoke a custom `__newindex`, and merging changes
+   * the relative order two such handlers fire in -- a behavior difference
+   * the self-validation re-parse check cannot catch, unlike every other
+   * pass here. See merge-adjacent-assigns.ts. */
+  mergeAdjacentAssignsAcrossFields: boolean;
 }
 
 export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
@@ -73,6 +80,7 @@ export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   mergeAdjacentAssigns: true,
   hoistRepeatedStrings: true,
   aliasRepeatedGlobalCalls: false,
+  mergeAdjacentAssignsAcrossFields: false,
 };
 
 function parseError(message: string, line = 0, col = 0): CompressResult {
@@ -110,7 +118,7 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
   // Runs once, after unused-local removal has settled -- a deletion can
   // newly place two locals adjacent to each other.
   if (options.mergeAdjacentLocals) mergeAdjacentLocals(resolved);
-  if (options.mergeAdjacentAssigns) mergeAdjacentAssigns(resolved);
+  if (options.mergeAdjacentAssigns) mergeAdjacentAssigns(resolved, options.mergeAdjacentAssignsAcrossFields);
   // Luau types are erased at compile time, so stripping them can't change
   // behavior -- only removes info for static analysis on the output.
   if (options.stripTypes) stripTypeInfo(resolved.chunk);
