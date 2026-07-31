@@ -1,27 +1,14 @@
 import type { Chunk, Expr, Stat } from "./ast";
 
-// Default-on optimization: a string literal (identical raw text, quote
-// character included) that appears 3+ times within one function's scope
-// gets hoisted into a single `local` declared at the top of that scope,
-// with every occurrence replaced by a reference to it.
-//
-// Unlike hoist-repeated-access.ts (tables/globals, which can hide a
-// custom `__index` side effect), this rests on NO unverifiable
-// assumption: a Lua string literal has no observable identity, no
-// metatable a script can intercept, and creating/reading one can never
-// error or have a side effect. Referencing it via a local instead of
-// inline is behaviorally 100% identical, unconditionally -- including
-// when the string is a call argument (e.g. a RemoteEvent payload): the
-// VALUE passed is byte-for-byte the same, only its source expression
-// changed. That's why this needs no experimental flag and runs
-// eagerly even into conditionally-reached branches (a literal has zero
-// cost to "evaluate" early).
-//
-// Deliberately scoped to one function at a time (chunk top level, or one
-// function body) rather than hoisting across closures, to avoid needing
-// to reason about a hoisted local's lifetime relative to the closures
-// that would capture it -- simpler to keep every hoist and its uses in
-// the same block family.
+// A string literal repeated 3+ times within one function's scope gets
+// hoisted into a `local` at the top of that scope, on by default: unlike
+// hoist-repeated-access.ts, this rests on no unverifiable assumption --
+// strings have no identity or metatable a script can intercept, so
+// referencing one via a local is behaviorally identical even as a call
+// argument (a RemoteEvent payload keeps the same value, just a different
+// source expression), and it's cheap to hoist even into a conditionally
+// reached branch. Scoped to one function at a time rather than across
+// closures, so a hoist and its uses always share the same block family.
 export function hoistRepeatedStrings(chunk: Chunk): boolean {
   const changedRef = { value: false };
   chunk.body = processScope(chunk.body, changedRef);

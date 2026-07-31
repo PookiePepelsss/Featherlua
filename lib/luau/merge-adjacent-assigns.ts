@@ -1,33 +1,18 @@
 import type { AssignStat, Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
+import { isCallExpr, someExpr } from "./ast-search";
 
-// Merges two adjacent single-target plain-assignment statements into one:
-// `a=1 b=2` -> `a,b=1,2`. Deliberately narrow: only fires when both
-// targets are bare Identifiers (never `t[k]=`/`t.k=`, whose index/base
-// expressions would need their own evaluation-order analysis) and neither
-// value expression contains a call.
-//
-// Two distinct semantic traps this guards against:
-//  1. Lua evaluates ALL values in a multi-assignment before performing ANY
-//     store. `a=1 b=a+1` sequentially: a is stored as 1, THEN `a+1` reads
-//     the NEW a (=2). Merged `a,b=1,a+1` would read the OLD a instead.
-//     Guarded by refusing to merge when the second value references the
-//     first target's binding (by symbolId for locals, by name for the
-//     same global).
-//  2. `a=1 a=2` (re-assigning the same binding) has a well-defined
-//     "last one wins" result sequentially; `a,a=1,2` assigns the same
-//     target twice in one statement, whose result Lua explicitly leaves
-//     undefined between conflicting duplicate targets. Guarded by
-//     refusing to merge when both targets denote the same binding.
-//
-// Calls are excluded entirely because a call's side effect could
-// legitimately depend on running between the two original stores (e.g.
-// mutating whatever the second target's evaluation would read) --
-// something that isn't the case for the plain-identifier-target,
-// call-free shape this pass restricts itself to. As with every other
-// pass, compress-aggressive.ts re-parses and re-resolves the output and
-// rejects anything not alpha-equivalent to the pre-print tree, so a
-// misjudged merge here fails closed rather than shipping wrong code.
+// `a=1 b=2` -> `a,b=1,2`. Only bare Identifier targets (never `t[k]=`, whose
+// index expression would need its own evaluation-order analysis), and
+// neither value may contain a call -- a call's side effect could
+// legitimately depend on running between the two original stores. Two more
+// guards: Lua evaluates every value in a multi-assignment before any store
+// happens, so `a=1 b=a+1` (b reads a's NEW value) would silently become
+// `a,b=1,a+1` reading the OLD value -- refused whenever the second value
+// references the first target's binding. And `a=1 a=2` assigning the same
+// binding twice in one merged statement is explicitly undefined in Lua, so
+// same-binding targets are refused too. Any miscategorization still fails
+// closed via compress-aggressive.ts's output re-validation.
 export function mergeAdjacentAssigns(resolved: ResolvedProgram): boolean {
   let changed = false;
   resolved.chunk.body = mergeBlock(resolved.chunk.body, () => {
@@ -48,86 +33,22 @@ function sameBinding(a: AssignStat, b: AssignStat): boolean {
   return ta.isGlobal === true && tb.isGlobal === true && ta.name === tb.name;
 }
 
-function containsCall(expr: Expr): boolean {
-  const visit = (e: Expr) => containsCall(e);
-  switch (expr.type) {
-    case "CallExpr":
-    case "MethodCallExpr":
-      return true;
-    case "InterpolatedStringExpr":
-      return expr.parts.some((part) => typeof part !== "string" && visit(part));
-    case "IndexExpr":
-      return visit(expr.object) || visit(expr.index);
-    case "MemberExpr":
-      return visit(expr.object);
-    case "TableExpr":
-      return expr.fields.some((f) => (f.kind === "computed" && visit(f.key)) || visit(f.value));
-    case "BinaryExpr":
-      return visit(expr.left) || visit(expr.right);
-    case "UnaryExpr":
-      return visit(expr.operand);
-    case "TypeAssertionExpr":
-      return visit(expr.expr);
-    case "IfExpr":
-      return (
-        visit(expr.cond) ||
-        visit(expr.thenExpr) ||
-        expr.elseifs.some((c) => visit(c.cond) || visit(c.expr)) ||
-        visit(expr.elseExpr)
-      );
-    case "ParenExpr":
-      return visit(expr.expr);
-    default:
-      return false; // literals, Identifier, FunctionExpr (body doesn't run here)
-  }
-}
-
-function exprReferencesTarget(expr: Expr, target: AssignStat["targets"][0]): boolean {
+function referencesTarget(expr: Expr, target: AssignStat["targets"][0]): boolean {
   if (target.type !== "Identifier") return false;
-  const visit = (e: Expr) => exprReferencesTarget(e, target);
-  switch (expr.type) {
-    case "Identifier":
-      if (target.symbolId !== undefined) return expr.symbolId === target.symbolId;
-      return expr.isGlobal === true && expr.name === target.name;
-    case "InterpolatedStringExpr":
-      return expr.parts.some((part) => typeof part !== "string" && visit(part));
-    case "IndexExpr":
-      return visit(expr.object) || visit(expr.index);
-    case "MemberExpr":
-      return visit(expr.object);
-    case "CallExpr":
-      return visit(expr.callee) || expr.args.some(visit);
-    case "MethodCallExpr":
-      return visit(expr.object) || expr.args.some(visit);
-    case "TableExpr":
-      return expr.fields.some((f) => (f.kind === "computed" && visit(f.key)) || visit(f.value));
-    case "BinaryExpr":
-      return visit(expr.left) || visit(expr.right);
-    case "UnaryExpr":
-      return visit(expr.operand);
-    case "TypeAssertionExpr":
-      return visit(expr.expr);
-    case "IfExpr":
-      return (
-        visit(expr.cond) ||
-        visit(expr.thenExpr) ||
-        expr.elseifs.some((c) => visit(c.cond) || visit(c.expr)) ||
-        visit(expr.elseExpr)
-      );
-    case "ParenExpr":
-      return visit(expr.expr);
-    default:
-      return false;
-  }
+  return someExpr(expr, (e) => {
+    if (e.type !== "Identifier") return false;
+    if (target.symbolId !== undefined) return e.symbolId === target.symbolId;
+    return e.isGlobal === true && target.isGlobal === true && e.name === target.name;
+  });
 }
 
 function canMerge(a: Stat, b: Stat): a is AssignStat {
   if (a.type !== "AssignStat" || b.type !== "AssignStat") return false;
   if (!isPlainIdentifierTarget(a) || !isPlainIdentifierTarget(b)) return false;
   if (a.values.length !== 1 || b.values.length !== 1) return false;
-  if (containsCall(a.values[0]) || containsCall(b.values[0])) return false;
+  if (someExpr(a.values[0], isCallExpr) || someExpr(b.values[0], isCallExpr)) return false;
   if (sameBinding(a, b)) return false;
-  return !exprReferencesTarget(b.values[0], a.targets[0]);
+  return !referencesTarget(b.values[0], a.targets[0]);
 }
 
 function mergeBlock(stats: Stat[], onChange: () => void): Stat[] {

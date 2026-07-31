@@ -1,25 +1,17 @@
 import type { Expr, LocalStat, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
+import { someExpr } from "./ast-search";
 
-// Merges two adjacent single-name `local` declarations into one:
-// `local a=1 local b=2` -> `local a,b=1,2`. Only fires when both sides are
-// either fully saturated (exactly one init value for the one name) or both
-// bare declarations (no init) -- any other shape (e.g. `local a=f(),g()`,
-// which discards g()'s value but still calls it) would shift which value
-// lands on which name once concatenated, silently changing behavior.
-//
-// Also refuses to merge when the second statement's init expression
-// references the first statement's just-declared symbol: in the merged
-// form `local a,b=1,a+1`, `a` on the right resolves to whatever was in
-// scope BEFORE this statement (real Lua semantics -- new locals aren't
-// visible in their own declaration's init list), not the `a=1` just
-// declared, which is exactly the meaning the unmerged code had. Checked by
-// symbolId (assigned during resolution on the original, unmerged tree), so
-// it reflects true scoping regardless of shadowing.
-//
-// A subtle miscategorization here would still be caught before shipping --
-// compress-aggressive.ts re-parses and re-resolves the printed output and
-// rejects anything not alpha-equivalent to the pre-print tree.
+// `local a=1 local b=2` -> `local a,b=1,2`. Requires both sides fully
+// saturated (one init per name) or both bare -- a partial/overflowing init
+// list (`local a=f(),g()`) would shift which value lands on which name
+// once concatenated. Also refuses to merge when `b`'s init reads `a`'s
+// symbol: in `local a,b=1,a+1`, the right-hand `a` would resolve to
+// whatever was in scope BEFORE this statement (real Lua semantics), not
+// the `a=1` just declared -- exactly the trap that made this unsafe in the
+// unmerged code's original meaning. Any miscategorization here still fails
+// closed: compress-aggressive.ts re-validates output against the source
+// tree before shipping it.
 export function mergeAdjacentLocals(resolved: ResolvedProgram): boolean {
   let changed = false;
   resolved.chunk.body = mergeBlock(resolved.chunk.body, () => {
@@ -34,7 +26,7 @@ function canMerge(a: LocalStat, b: LocalStat): boolean {
   if (a.init.length !== 1 || b.init.length !== 1) return false;
   const id = a.names[0].symbolId;
   if (id === undefined) return false;
-  return !exprReferencesSymbol(b.init[0], id);
+  return !someExpr(b.init[0], (e) => e.type === "Identifier" && e.symbolId === id);
 }
 
 function mergeBlock(stats: Stat[], onChange: () => void): Stat[] {
@@ -167,97 +159,5 @@ function mergeInExpr(expr: Expr, onChange: () => void): void {
       return;
     default:
       return;
-  }
-}
-
-// === does `expr` (or anything reachable from it) read symbolId `id`? ===
-
-function exprReferencesSymbol(expr: Expr, id: number): boolean {
-  const visit = (e: Expr) => exprReferencesSymbol(e, id);
-  switch (expr.type) {
-    case "NilExpr":
-    case "TrueExpr":
-    case "FalseExpr":
-    case "VarargExpr":
-    case "NumberExpr":
-    case "StringExpr":
-      return false;
-    case "Identifier":
-      return expr.symbolId === id;
-    case "InterpolatedStringExpr":
-      return expr.parts.some((part) => typeof part !== "string" && visit(part));
-    case "IndexExpr":
-      return visit(expr.object) || visit(expr.index);
-    case "MemberExpr":
-      return visit(expr.object);
-    case "CallExpr":
-      return visit(expr.callee) || expr.args.some(visit);
-    case "MethodCallExpr":
-      return visit(expr.object) || expr.args.some(visit);
-    case "FunctionExpr":
-      return blockReferencesSymbol(expr.body, id);
-    case "TableExpr":
-      return expr.fields.some((f) => (f.kind === "computed" && visit(f.key)) || visit(f.value));
-    case "BinaryExpr":
-      return visit(expr.left) || visit(expr.right);
-    case "UnaryExpr":
-      return visit(expr.operand);
-    case "TypeAssertionExpr":
-      return visit(expr.expr);
-    case "IfExpr":
-      return (
-        visit(expr.cond) ||
-        visit(expr.thenExpr) ||
-        expr.elseifs.some((c) => visit(c.cond) || visit(c.expr)) ||
-        visit(expr.elseExpr)
-      );
-    case "ParenExpr":
-      return visit(expr.expr);
-  }
-}
-
-function blockReferencesSymbol(stats: Stat[], id: number): boolean {
-  return stats.some((stat) => statReferencesSymbol(stat, id));
-}
-
-function statReferencesSymbol(stat: Stat, id: number): boolean {
-  const visit = (e: Expr) => exprReferencesSymbol(e, id);
-  switch (stat.type) {
-    case "LocalStat":
-      return stat.init.some(visit);
-    case "LocalFunctionStat":
-      return blockReferencesSymbol(stat.func.body, id);
-    case "FunctionDeclStat":
-      return visit(stat.target.base) || blockReferencesSymbol(stat.func.body, id);
-    case "AssignStat":
-      return stat.targets.some(visit) || stat.values.some(visit);
-    case "CompoundAssignStat":
-      return visit(stat.target) || visit(stat.value);
-    case "CallStat":
-      return visit(stat.call);
-    case "DoStat":
-      return blockReferencesSymbol(stat.body, id);
-    case "WhileStat":
-      return visit(stat.cond) || blockReferencesSymbol(stat.body, id);
-    case "RepeatStat":
-      return blockReferencesSymbol(stat.body, id) || visit(stat.cond);
-    case "IfStat":
-      return (
-        stat.clauses.some((c) => visit(c.cond) || blockReferencesSymbol(c.body, id)) ||
-        (stat.elseBody !== undefined && blockReferencesSymbol(stat.elseBody, id))
-      );
-    case "NumericForStat":
-      return (
-        visit(stat.start) ||
-        visit(stat.stop) ||
-        (stat.step !== undefined && visit(stat.step)) ||
-        blockReferencesSymbol(stat.body, id)
-      );
-    case "GenericForStat":
-      return stat.exprs.some(visit) || blockReferencesSymbol(stat.body, id);
-    case "ReturnStat":
-      return stat.args.some(visit);
-    default:
-      return false;
   }
 }

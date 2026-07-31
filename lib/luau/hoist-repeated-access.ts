@@ -1,44 +1,25 @@
 import type { Chunk, Expr, Stat } from "./ast";
 import { parseLuauNumber } from "./optimize";
+import { isCallExpr, someBlock } from "./ast-search";
 
-// Opt-in, off-by-default optimization: hoists a repeated `global.field.
-// field...` read out of a loop into a local computed once before it. This
-// is a real, well-established Lua/Luau performance idiom (caching
-// `game:GetService(...)` results, deep field chains, etc.), but unlike
-// every other pass in this codebase it rests on ONE assumption that can't
-// be verified from source: that the accessed tables have no custom
-// `__index` metamethod with a side effect or a non-idempotent result. If
-// that assumption doesn't hold for a given script, this pass can change
-// behavior. That's why it's opt-in and off by default -- everything else
-// here is provably safe from the source text alone; this isn't.
+// Opt-in, off by default: hoists a repeated `global.field.field...` read
+// out of a loop into a local computed once before it (caching
+// `game:GetService(...)`, deep field chains, etc.). The one pass in this
+// codebase that isn't provably safe from source alone -- it assumes the
+// accessed tables have no custom `__index` side effect.
 //
-// Scoped as narrowly as it usefully can be to keep that one assumption as
-// the *only* one:
-// - Only `NumericForStat` with literal bounds provably running at least
-//   once, or `RepeatStat` (which always runs its body once by definition)
-//   -- hoisting eagerly evaluates the chain before the loop even starts,
-//   so a loop that might run zero times must never be a candidate (that
-//   would introduce a read, and possible error, that never happened).
-// - The chain's root name must never appear as a `local` declaration or
-//   an assignment target ANYWHERE in the whole program -- if a name is
-//   never declared locally and never assigned to, every occurrence of it
-//   unambiguously denotes the same stable global, with no scoping
-//   ambiguity to reason about.
-// - A loop containing ANY function call anywhere in its body (including
-//   nested loops/conditionals/closures) is skipped entirely: a call can
-//   do anything, including mutating a table reachable from the chain,
-//   which would invalidate a value cached before the loop started. This
-//   is also what keeps this pass from ever touching a RemoteEvent/
-//   RemoteFunction call or its arguments -- those are calls, never chain
-//   reads, so they're never examined as hoist candidates and the call
-//   itself disqualifies the whole loop from hoisting around it.
-// - Only occurrences reached UNCONDITIONALLY (directly in the loop body's
-//   statement list, transparent through `do...end`, never inside an `if`
-//   or nested loop) count as candidates or get replaced -- anything
-//   conditionally reached is left completely untouched, so this can never
-//   eagerly evaluate something the original code might have skipped.
-// - Chains never include a call or a computed (`[...]`) index -- only a
-//   plain `Name.field.field...` spine, depth 1+.
+// Kept as narrow as possible around that one assumption: only loops
+// provably running at least once (`RepeatStat`, or `NumericForStat` with
+// literal bounds); the chain's root name must never be declared as a
+// local or assigned to ANYWHERE in the program, so it unambiguously
+// denotes the same global; a loop containing any function call anywhere
+// in it is skipped entirely, since a call could mutate something
+// reachable from the chain (this is also what keeps a RemoteEvent call's
+// own arguments untouched -- the call disqualifies its whole loop before
+// the chain inside it is ever considered); only occurrences reached
+// unconditionally in the loop body count, never something behind an
+// `if` or nested loop; and chains are plain `Name.field.field...` only,
+// never a call or a computed `[...]` index.
 export function hoistRepeatedGlobalAccess(chunk: Chunk): boolean {
   const unsafeNames = collectUnsafeBaseNames(chunk);
   const changedRef = { value: false };
@@ -219,98 +200,6 @@ function collectUnsafeBaseNames(chunk: Chunk): Set<string> {
   return names;
 }
 
-// === does any part of this zone contain a call? (full recursion, including
-// nested loops/conditionals/closures -- any call anywhere disqualifies) ===
-
-function zoneContainsCall(stats: Stat[]): boolean {
-  for (const stat of stats) {
-    if (statContainsCall(stat)) return true;
-  }
-  return false;
-}
-
-function statContainsCall(stat: Stat): boolean {
-  switch (stat.type) {
-    case "LocalStat":
-      return stat.init.some(exprContainsCall);
-    case "LocalFunctionStat":
-      return zoneContainsCall(stat.func.body);
-    case "FunctionDeclStat":
-      return exprContainsCall(stat.target.base) || zoneContainsCall(stat.func.body);
-    case "AssignStat":
-      return stat.targets.some(exprContainsCall) || stat.values.some(exprContainsCall);
-    case "CompoundAssignStat":
-      return exprContainsCall(stat.target) || exprContainsCall(stat.value);
-    case "CallStat":
-      return true;
-    case "DoStat":
-      return zoneContainsCall(stat.body);
-    case "WhileStat":
-      return exprContainsCall(stat.cond) || zoneContainsCall(stat.body);
-    case "RepeatStat":
-      return zoneContainsCall(stat.body) || exprContainsCall(stat.cond);
-    case "IfStat":
-      return (
-        stat.clauses.some((c) => exprContainsCall(c.cond) || zoneContainsCall(c.body)) ||
-        (stat.elseBody ? zoneContainsCall(stat.elseBody) : false)
-      );
-    case "NumericForStat":
-      return (
-        exprContainsCall(stat.start) ||
-        exprContainsCall(stat.stop) ||
-        (stat.step ? exprContainsCall(stat.step) : false) ||
-        zoneContainsCall(stat.body)
-      );
-    case "GenericForStat":
-      return stat.exprs.some(exprContainsCall) || zoneContainsCall(stat.body);
-    case "ReturnStat":
-      return stat.args.some(exprContainsCall);
-    default:
-      return false;
-  }
-}
-
-function exprContainsCall(expr: Expr): boolean {
-  switch (expr.type) {
-    case "CallExpr":
-    case "MethodCallExpr":
-      return true;
-    case "NilExpr":
-    case "TrueExpr":
-    case "FalseExpr":
-    case "VarargExpr":
-    case "NumberExpr":
-    case "StringExpr":
-    case "Identifier":
-      return false;
-    case "InterpolatedStringExpr":
-      return expr.parts.some((p) => typeof p !== "string" && exprContainsCall(p));
-    case "IndexExpr":
-      return exprContainsCall(expr.object) || exprContainsCall(expr.index);
-    case "MemberExpr":
-      return exprContainsCall(expr.object);
-    case "FunctionExpr":
-      return zoneContainsCall(expr.body);
-    case "TableExpr":
-      return expr.fields.some((f) => (f.kind === "computed" && exprContainsCall(f.key)) || exprContainsCall(f.value));
-    case "BinaryExpr":
-      return exprContainsCall(expr.left) || exprContainsCall(expr.right);
-    case "UnaryExpr":
-      return exprContainsCall(expr.operand);
-    case "TypeAssertionExpr":
-      return exprContainsCall(expr.expr);
-    case "IfExpr":
-      return (
-        exprContainsCall(expr.cond) ||
-        exprContainsCall(expr.thenExpr) ||
-        expr.elseifs.some((c) => exprContainsCall(c.cond) || exprContainsCall(c.expr)) ||
-        exprContainsCall(expr.elseExpr)
-      );
-    case "ParenExpr":
-      return exprContainsCall(expr.expr);
-  }
-}
-
 // === is a NumericForStat/RepeatStat provably going to run its body at
 // least once? (hoisting must never introduce an evaluation that the
 // original zero-iteration loop would never have reached) ===
@@ -337,7 +226,7 @@ let hoistCounter = 0;
 // deciding what's safe to hoist and for replacing occurrences. Anything
 // reached conditionally is left completely alone.
 function tryHoist(loopBody: Stat[], unsafeNames: Set<string>): Stat[] {
-  if (zoneContainsCall(loopBody)) return [];
+  if (someBlock(loopBody, isCallExpr)) return [];
 
   const counts = new Map<string, number>();
   const templatesByKey = new Map<string, Expr>();
