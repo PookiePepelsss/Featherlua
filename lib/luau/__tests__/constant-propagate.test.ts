@@ -85,3 +85,52 @@ describe("constant propagation: safety boundaries", () => {
     expect(result.output).toBe("do print(2)end print(1)");
   });
 });
+
+describe("propagateConstants: number byte-savings gate", () => {
+  it("keeps a repeated long number as a local instead of inlining it everywhere", () => {
+    const result = compressAggressive("local GRAVITY = 196.2\nprint(GRAVITY,GRAVITY,GRAVITY,GRAVITY,GRAVITY)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("local a=196.2 print(a,a,a,a,a)");
+  });
+
+  it("still inlines a short number even when repeated (already cheaper than any local)", () => {
+    const result = compressAggressive("local x = 1\nprint(x,x,x,x,x)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("print(1,1,1,1,1)");
+  });
+
+  it("still inlines a single-use number regardless of length (no local overhead to weigh against)", () => {
+    const result = compressAggressive("local GRAVITY = 196.2\nprint(GRAVITY)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("print(196.2)");
+  });
+
+  it("without renaming, uses the real original name's length instead of assuming it shrinks", () => {
+    // "GRAVITY" (7 chars) is longer than "196.2" (5 chars), so even kept
+    // as a local it costs more than just repeating the number -- correctly
+    // inlines here, unlike the renamed case above where the local becomes
+    // a single letter.
+    const result = compressAggressive("local GRAVITY = 196.2\nprint(GRAVITY,GRAVITY,GRAVITY,GRAVITY,GRAVITY)", {
+      rename: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("print(196.2,196.2,196.2,196.2,196.2)");
+
+    // But a short original name IS worth keeping, even without renaming.
+    const kept = compressAggressive("local g = 196.2\nprint(g,g,g,g,g)", { rename: false });
+    expect(kept.ok).toBe(true);
+    if (!kept.ok) return;
+    expect(kept.output).toBe("local g=196.2 print(g,g,g,g,g)");
+  });
+
+  it("output remains valid, re-parseable Luau", () => {
+    const result = compressAggressive("local GRAVITY = 196.2\nprint(GRAVITY,GRAVITY,GRAVITY,GRAVITY,GRAVITY)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(() => parse(result.output)).not.toThrow();
+  });
+});

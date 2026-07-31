@@ -20,16 +20,18 @@ import { stringLocalIsWorthKeeping } from "./hoist-repeated-strings";
 //
 // Returns whether anything was substituted, so the caller knows another
 // round might find more.
-export function propagateConstants(resolved: ResolvedProgram): boolean {
+export function propagateConstants(resolved: ResolvedProgram, willRename: boolean): boolean {
   const candidates = new Map<number, Expr>(); // symbolId -> literal to substitute
+  const nameLengths = new Map<number, number>(); // symbolId -> original declared name's length
   const reassigned = new Set<number>();
   const refCounts = new Map<number, number>();
 
-  collectBlock(resolved.chunk.body, candidates, reassigned, refCounts);
+  collectBlock(resolved.chunk.body, candidates, nameLengths, reassigned, refCounts);
 
   const eligible = new Map<number, Expr>();
   for (const [id, literal] of candidates) {
     if (reassigned.has(id)) continue;
+    const refCount = refCounts.get(id) ?? 0;
     // A string referenced enough times that hoist-repeated-strings.ts
     // would hoist it into its own local must never be inlined back out --
     // otherwise the two passes fight every other compress: hoist pulls a
@@ -39,7 +41,16 @@ export function propagateConstants(resolved: ResolvedProgram): boolean {
     // gets hoisted instead next round, and output oscillates between two
     // states forever instead of settling. Same threshold, same call, so
     // the two passes can never disagree about which strings stay local.
-    if (literal.type === "StringExpr" && stringLocalIsWorthKeeping(literal.raw, refCounts.get(id) ?? 0)) continue;
+    if (literal.type === "StringExpr" && stringLocalIsWorthKeeping(literal.raw, refCount)) continue;
+    // A number literal that costs more to repeat at every use site than
+    // to keep as a local (e.g. `local GRAVITY = 9.81` read 5+ times)
+    // shouldn't be inlined either -- unlike the string case, there's no
+    // separate hoisting pass to stay consistent with here, just a direct
+    // "would this make the output bigger" check using the real original
+    // name's length (or 1, optimistically assuming renaming shrinks it).
+    if (literal.type === "NumberExpr" && !worthPropagatingNumber(literal.raw, refCount, nameLengths.get(id), willRename)) {
+      continue;
+    }
     eligible.set(id, literal);
   }
   if (eligible.size === 0) return false;
@@ -189,6 +200,31 @@ function dropDeclarationsInExpr(expr: Expr, hitSymbols: Set<number>) {
   }
 }
 
+// True if inlining a number literal `refCount` times costs no more bytes
+// than leaving it as a local. `nameLength` is the original declaration's
+// name length when renaming is off (the local keeps that exact text); when
+// renaming is on, 1 is used instead -- an optimistic but realistic
+// assumption, since renaming reliably gets a scope's first handful of
+// locals down to a single letter.
+const DECL_OVERHEAD = 7; // `local ` + `=`
+
+function worthPropagatingNumber(
+  raw: string,
+  refCount: number,
+  nameLength: number | undefined,
+  willRename: boolean,
+): boolean {
+  if (refCount < 2 || nameLength === undefined) return true;
+  const assumedNameLength = willRename ? 1 : nameLength;
+  // Propagating drops the declaration entirely (each use becomes the raw
+  // literal); not propagating keeps it (each use stays a name reference,
+  // but the declaration itself -- `local `+name+`=`+raw -- still costs
+  // bytes too).
+  const inlinedCost = refCount * raw.length;
+  const keptAsLocalCost = refCount * assumedNameLength + (DECL_OVERHEAD + assumedNameLength + raw.length);
+  return inlinedCost <= keptAsLocalCost;
+}
+
 function isPropagatableLiteral(expr: Expr): boolean {
   return (
     expr.type === "NilExpr" ||
@@ -211,10 +247,11 @@ function cloneLiteral(expr: Expr): Expr {
 function collectBlock(
   stats: Stat[],
   candidates: Map<number, Expr>,
+  nameLengths: Map<number, number>,
   reassigned: Set<number>,
   refCounts: Map<number, number>,
 ) {
-  for (const stat of stats) collectStat(stat, candidates, reassigned, refCounts);
+  for (const stat of stats) collectStat(stat, candidates, nameLengths, reassigned, refCounts);
 }
 
 function markReassigned(target: Expr, reassigned: Set<number>) {
@@ -224,11 +261,12 @@ function markReassigned(target: Expr, reassigned: Set<number>) {
 function collectStat(
   stat: Stat,
   candidates: Map<number, Expr>,
+  nameLengths: Map<number, number>,
   reassigned: Set<number>,
   refCounts: Map<number, number>,
 ) {
-  const visit = (e: Expr) => collectExpr(e, candidates, reassigned, refCounts);
-  const block = (b: Stat[]) => collectBlock(b, candidates, reassigned, refCounts);
+  const visit = (e: Expr) => collectExpr(e, candidates, reassigned, refCounts, nameLengths);
+  const block = (b: Stat[]) => collectBlock(b, candidates, nameLengths, reassigned, refCounts);
   switch (stat.type) {
     case "LocalStat":
       stat.init.forEach(visit);
@@ -241,6 +279,7 @@ function collectStat(
         isPropagatableLiteral(stat.init[0])
       ) {
         candidates.set(stat.names[0].symbolId, stat.init[0]);
+        nameLengths.set(stat.names[0].symbolId, stat.names[0].name.length);
       }
       return;
     case "LocalFunctionStat":
@@ -307,8 +346,9 @@ function collectExpr(
   candidates: Map<number, Expr>,
   reassigned: Set<number>,
   refCounts: Map<number, number>,
+  nameLengths: Map<number, number>,
 ) {
-  const visit = (e: Expr) => collectExpr(e, candidates, reassigned, refCounts);
+  const visit = (e: Expr) => collectExpr(e, candidates, reassigned, refCounts, nameLengths);
   switch (expr.type) {
     case "NilExpr":
     case "TrueExpr":
@@ -339,7 +379,7 @@ function collectExpr(
       expr.args.forEach(visit);
       return;
     case "FunctionExpr":
-      collectBlock(expr.body, candidates, reassigned, refCounts);
+      collectBlock(expr.body, candidates, nameLengths, reassigned, refCounts);
       return;
     case "TableExpr":
       for (const field of expr.fields) {

@@ -101,7 +101,7 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
   if (options.propagateConstants || options.removeUnusedLocals) {
     for (let i = 0; i < 20; i += 1) {
       let changed = false;
-      if (options.propagateConstants) changed = propagateConstants(resolved) || changed;
+      if (options.propagateConstants) changed = propagateConstants(resolved, options.rename) || changed;
       if (options.removeUnusedLocals) changed = removeUnusedLocals(resolved) || changed;
       if (!changed) break;
       if (options.foldConstants) optimize(resolved.chunk);
