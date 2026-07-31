@@ -10,11 +10,11 @@ import { stripTypeInfo } from "./strip-types";
 import { optimize } from "./optimize";
 import { propagateConstants } from "./constant-propagate";
 import { removeUnusedLocals } from "./remove-unused-locals";
-import { hoistRepeatedGlobalAccess } from "./hoist-repeated-access";
-import { hoistRepeatedStrings } from "./hoist-repeated-strings";
+import { hoistRepeatedGlobalAccess, resetHoistCounter } from "./hoist-repeated-access";
+import { hoistRepeatedStrings, resetStringHoistCounter } from "./hoist-repeated-strings";
 import { mergeAdjacentLocals } from "./merge-adjacent-locals";
 import { mergeAdjacentAssigns } from "./merge-adjacent-assigns";
-import { aliasRepeatedGlobalCalls } from "./alias-repeated-global-calls";
+import { aliasRepeatedGlobalCalls, resetAliasCounter } from "./alias-repeated-global-calls";
 import { hasExoticEnvironmentSignal } from "./exotic-environment-guard";
 
 export type CompressResult =
@@ -122,6 +122,14 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
 // against a printer/renamer bug (see regressions.test.ts for real ones it
 // would have caught).
 export function compressAggressive(source: string, options: Partial<AggressiveOptions> = {}): CompressResult {
+  // Each synthetic-name counter is module-level (shared across sibling
+  // hoists/aliases within one call); reset here so a session compressing
+  // many scripts back-to-back doesn't leave them climbing indefinitely,
+  // which would make the byte-savings gates that read them progressively
+  // less accurate call after call for no reason.
+  resetHoistCounter();
+  resetStringHoistCounter();
+  resetAliasCounter();
   const opts: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
   let parsed;
   try {

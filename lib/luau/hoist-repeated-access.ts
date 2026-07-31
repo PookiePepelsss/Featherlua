@@ -221,7 +221,18 @@ function numericForRunsAtLeastOnce(stat: Extract<Stat, { type: "NumericForStat" 
 
 // === hoisting itself ===
 
+// Module-level so sibling loops within one compress() share a single
+// naming sequence; reset per call (see compress-aggressive.ts) so a long
+// browser session compressing many scripts back-to-back doesn't leave
+// this climbing forever -- the byte-savings gates elsewhere use the
+// counter's value to estimate a synthetic name's length, so letting it
+// grow unbounded would make later compressions' decisions inconsistent
+// with earlier ones for no reason.
 let hoistCounter = 0;
+
+export function resetHoistCounter(): void {
+  hoistCounter = 0;
+}
 
 // Only walks the UNCONDITIONAL top level of the loop body (transparent
 // through `do...end`; stops at `if`/nested loops/closures) -- both for

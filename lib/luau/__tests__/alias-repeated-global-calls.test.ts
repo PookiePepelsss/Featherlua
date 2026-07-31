@@ -110,4 +110,19 @@ describe("alias-repeated-global-calls: safety boundaries", () => {
     if (!result2.ok) return;
     expect(result2.output).toBe(result1.output);
   });
+
+  it("gives the same answer regardless of how many prior compressions ran in this session", () => {
+    // Regression: the synthetic-name counter this gate reads to estimate
+    // an alias's eventual length is module-level state. Without a reset
+    // per call, compressing enough scripts in one session pushes the
+    // counter into double digits, which can flip a borderline (name
+    // length vs. call count) decision -- the exact same input aliasing
+    // differently depending purely on how many unrelated compressions
+    // happened earlier.
+    const src = 'setmetatable(t,m)setmetatable(t,m)setmetatable(t,m)setmetatable(t,m)';
+    const first = out(src, { rename: false });
+    for (let i = 0; i < 50; i += 1) out(`f${i}()f${i}()f${i}()f${i}()`, { rename: false });
+    const later = out(src, { rename: false });
+    expect(later).toBe(first);
+  });
 });

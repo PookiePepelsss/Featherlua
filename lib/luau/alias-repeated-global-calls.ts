@@ -45,7 +45,14 @@ function worthAliasing(name: string, count: number, willRename: boolean): boolea
   return newCost < originalCost;
 }
 
+// Reset per call (see compress-aggressive.ts); see hoist-repeated-access.ts's
+// resetHoistCounter for why letting this climb across separate compress()
+// calls would be an unforced inconsistency.
 let aliasCounter = 0;
+
+export function resetAliasCounter(): void {
+  aliasCounter = 0;
+}
 
 function processScope(
   stats: Stat[],

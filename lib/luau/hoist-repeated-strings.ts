@@ -34,7 +34,14 @@ export function stringLocalIsWorthKeeping(raw: string, count: number): boolean {
   return newCost < originalCost;
 }
 
+// Reset per call (see compress-aggressive.ts); see hoist-repeated-access.ts's
+// resetHoistCounter for why letting this climb across separate compress()
+// calls would be an unforced inconsistency.
 let stringHoistCounter = 0;
+
+export function resetStringHoistCounter(): void {
+  stringHoistCounter = 0;
+}
 
 function processScope(stats: Stat[], changedRef: { value: boolean }): Stat[] {
   const counts = new Map<string, number>();
