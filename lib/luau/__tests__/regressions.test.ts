@@ -159,3 +159,22 @@ describe("regression: self-validation catches printer bugs before they reach the
     assertValidRoundtrip(result.output);
   });
 });
+
+describe("regression: identifier ending in a digit before a dot", () => {
+  const noFold = { rename: false, propagateConstants: false, removeUnusedLocals: false } as const;
+
+  it("does not insert a space (needsSpace's digit-before-dot guard is number-only)", () => {
+    const result = compressAggressive("local p1 = {x = 1}\nprint(p1.x)", noFold);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toContain("p1.x");
+    expect(result.output).not.toContain("p1 .x");
+  });
+
+  it("still protects a real number literal immediately before a dot", () => {
+    const result = compressAggressive("print(1 .. 0.5)", noFold);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    assertValidRoundtrip(result.output);
+  });
+});

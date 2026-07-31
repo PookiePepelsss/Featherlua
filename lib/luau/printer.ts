@@ -4,19 +4,28 @@ import type {
   AssignTarget, Chunk, Expr, FunctionExpr, FunctionName, Stat, TypeSpan,
 } from "./ast";
 
+interface Part {
+  text: string;
+  // Only true for a NumberExpr's own raw text -- needed so the
+  // digit-before-dot guard below can't fire on an identifier that merely
+  // ends in a digit (`p1` before `.x`), which is never ambiguous the way
+  // a real number literal like `1` before `.5` would be.
+  isNumber: boolean;
+}
+
 // Forked from app/page.tsx's Safe-mode needsSpace, operating on the printer's
 // own emitted raw token strings instead of the Safe tokenizer's tokens.
 // Kept independent of Safe mode by design (see plan) but reuses scan.ts's
 // already-forked primitives rather than re-duplicating the regexes again.
-function needsSpace(left: string, right: string): boolean {
-  const leftEnd = left.length ? left[left.length - 1] : "";
-  const rightStart = right[0] ?? "";
+function needsSpace(left: Part, right: Part): boolean {
+  const leftEnd = left.text.length ? left.text[left.text.length - 1] : "";
+  const rightStart = right.text[0] ?? "";
   if (IDENT_CONTINUE_RE.test(leftEnd) && IDENT_CONTINUE_RE.test(rightStart)) return true;
-  if (DIGIT_RE.test(leftEnd) && rightStart === ".") return true;
+  if (left.isNumber && DIGIT_RE.test(leftEnd) && rightStart === ".") return true;
   if (leftEnd === "." && DIGIT_RE.test(rightStart)) return true;
   if (leftEnd === "-" && rightStart === "-") return true;
   if (leftEnd === "[" && (rightStart === "[" || rightStart === "=")) return true;
-  return compoundSymbolSet.has(left + right);
+  return compoundSymbolSet.has(left.text + right.text);
 }
 
 const ATOM_PRECEDENCE = 100;
@@ -40,7 +49,7 @@ function precedenceOf(expr: Expr): number {
 }
 
 export class Printer {
-  private parts: string[] = [];
+  private parts: Part[] = [];
   private renameMap: Map<number, string> | undefined;
 
   constructor(renameMap?: Map<number, string>) {
@@ -48,7 +57,11 @@ export class Printer {
   }
 
   private emit(text: string) {
-    this.parts.push(text);
+    this.parts.push({ text, isNumber: false });
+  }
+
+  private emitNumber(raw: string) {
+    this.parts.push({ text: raw, isNumber: true });
   }
 
   private emitName(name: string, symbolId?: number) {
@@ -73,10 +86,10 @@ export class Printer {
   print(chunk: Chunk): string {
     this.printBlock(chunk.body);
     let output = "";
-    let previous: string | undefined;
+    let previous: Part | undefined;
     for (const part of this.parts) {
       if (previous !== undefined && needsSpace(previous, part)) output += " ";
-      output += part;
+      output += part.text;
       previous = part;
     }
     return output.trim();
@@ -323,7 +336,7 @@ export class Printer {
         this.emit("...");
         break;
       case "NumberExpr":
-        this.emit(expr.raw);
+        this.emitNumber(expr.raw);
         break;
       case "StringExpr":
         this.emit(expr.raw);
