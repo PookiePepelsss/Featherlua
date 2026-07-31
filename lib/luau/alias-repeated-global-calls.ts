@@ -1,5 +1,6 @@
 import type { Chunk, Expr, Stat } from "./ast";
 import { collectUnsafeBaseNames } from "./hoist-repeated-access";
+import { hasExoticEnvironmentSignal } from "./exotic-environment-guard";
 
 // Opt-in, off by default: a bare global function called 3+ times in one
 // scope (`print(...)`, `warn(...)`, etc.) gets aliased to a local declared
@@ -25,7 +26,10 @@ import { collectUnsafeBaseNames } from "./hoist-repeated-access";
 // single renamed letter or stays the literal `__fnN` text decides whether
 // aliasing is worth it at all. Threaded in from the caller, which already
 // knows the real `rename` option.
+// Also refuses to do anything at all if the program references any known
+// environment-manipulation API anywhere (see exotic-environment-guard.ts).
 export function aliasRepeatedGlobalCalls(chunk: Chunk, willRename: boolean): boolean {
+  if (hasExoticEnvironmentSignal(chunk)) return false;
   const unsafeNames = collectUnsafeBaseNames(chunk);
   const changedRef = { value: false };
   chunk.body = processScope(chunk.body, unsafeNames, willRename, changedRef);
