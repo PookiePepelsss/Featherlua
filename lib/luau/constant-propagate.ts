@@ -42,13 +42,15 @@ export function propagateConstants(resolved: ResolvedProgram, willRename: boolea
     // states forever instead of settling. Same threshold, same call, so
     // the two passes can never disagree about which strings stay local.
     if (literal.type === "StringExpr" && stringLocalIsWorthKeeping(literal.raw, refCount)) continue;
-    // A number literal that costs more to repeat at every use site than
-    // to keep as a local (e.g. `local GRAVITY = 9.81` read 5+ times)
-    // shouldn't be inlined either -- unlike the string case, there's no
-    // separate hoisting pass to stay consistent with here, just a direct
-    // "would this make the output bigger" check using the real original
-    // name's length (or 1, optimistically assuming renaming shrinks it).
-    if (literal.type === "NumberExpr" && !worthPropagatingNumber(literal.raw, refCount, nameLengths.get(id), willRename)) {
+    // A nil/boolean/number literal that costs more to repeat at every use
+    // site than to keep as a local (e.g. `local GRAVITY = 9.81` read 5+
+    // times) shouldn't be inlined either -- unlike the string case,
+    // there's no separate hoisting pass to stay consistent with here,
+    // just a direct "would this make the output bigger" check using the
+    // real original name's length (or 1, optimistically assuming
+    // renaming shrinks it).
+    const rawLength = literalRawLength(literal);
+    if (rawLength !== undefined && !worthPropagatingLiteral(rawLength, refCount, nameLengths.get(id), willRename)) {
       continue;
     }
     eligible.set(id, literal);
@@ -200,16 +202,36 @@ function dropDeclarationsInExpr(expr: Expr, hitSymbols: Set<number>) {
   }
 }
 
-// True if inlining a number literal `refCount` times costs no more bytes
-// than leaving it as a local. `nameLength` is the original declaration's
-// name length when renaming is off (the local keeps that exact text); when
+// The printed length of a nil/boolean/number literal -- fixed text for
+// nil/true/false, the literal's own raw text for a number. Strings are
+// deliberately not covered here; their gate lives in
+// hoist-repeated-strings.ts and has to stay in sync with that pass
+// specifically (see the caller).
+function literalRawLength(expr: Expr): number | undefined {
+  switch (expr.type) {
+    case "NilExpr":
+      return 3;
+    case "TrueExpr":
+      return 4;
+    case "FalseExpr":
+      return 5;
+    case "NumberExpr":
+      return expr.raw.length;
+    default:
+      return undefined;
+  }
+}
+
+// True if inlining a literal `refCount` times costs no more bytes than
+// leaving it as a local. `nameLength` is the original declaration's name
+// length when renaming is off (the local keeps that exact text); when
 // renaming is on, 1 is used instead -- an optimistic but realistic
 // assumption, since renaming reliably gets a scope's first handful of
 // locals down to a single letter.
 const DECL_OVERHEAD = 7; // `local ` + `=`
 
-function worthPropagatingNumber(
-  raw: string,
+function worthPropagatingLiteral(
+  rawLength: number,
   refCount: number,
   nameLength: number | undefined,
   willRename: boolean,
@@ -220,8 +242,8 @@ function worthPropagatingNumber(
   // literal); not propagating keeps it (each use stays a name reference,
   // but the declaration itself -- `local `+name+`=`+raw -- still costs
   // bytes too).
-  const inlinedCost = refCount * raw.length;
-  const keptAsLocalCost = refCount * assumedNameLength + (DECL_OVERHEAD + assumedNameLength + raw.length);
+  const inlinedCost = refCount * rawLength;
+  const keptAsLocalCost = refCount * assumedNameLength + (DECL_OVERHEAD + assumedNameLength + rawLength);
   return inlinedCost <= keptAsLocalCost;
 }
 

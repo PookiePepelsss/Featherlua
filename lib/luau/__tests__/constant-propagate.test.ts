@@ -134,3 +134,37 @@ describe("propagateConstants: number byte-savings gate", () => {
     expect(() => parse(result.output)).not.toThrow();
   });
 });
+
+describe("propagateConstants: nil/boolean byte-savings gate", () => {
+  it("does not affect the single-use DEBUG-flag dead-branch idiom", () => {
+    const result = compressAggressive("local DEBUG = false\nif DEBUG then print(1) end\nprint(2)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("print(2)");
+  });
+
+  it("still inlines true/false when the literal is shorter than any local would be", () => {
+    const result = compressAggressive(
+      "local ENABLE_FEATURE_X = true\nprint(ENABLE_FEATURE_X,ENABLE_FEATURE_X,ENABLE_FEATURE_X,ENABLE_FEATURE_X,ENABLE_FEATURE_X)",
+      { rename: false },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("print(true,true,true,true,true)");
+  });
+
+  it("keeps a repeated nil as a local when renaming makes that cheaper than repeating \"nil\"", () => {
+    const result = compressAggressive("local EMPTY = nil\nprint(EMPTY,EMPTY,EMPTY,EMPTY,EMPTY,EMPTY)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Also picks up remove-nil-declaration's own further simplification.
+    expect(result.output).toBe("local a print(a,a,a,a,a,a)");
+  });
+
+  it("output remains valid, re-parseable Luau", () => {
+    const result = compressAggressive("local EMPTY = nil\nprint(EMPTY,EMPTY,EMPTY,EMPTY,EMPTY,EMPTY)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(() => parse(result.output)).not.toThrow();
+  });
+});
