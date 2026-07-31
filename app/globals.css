@@ -65,6 +65,23 @@ textarea::placeholder { color: var(--muted); }
 textarea:focus { border-color: #555555; }
 textarea[aria-invalid="true"] { border-color: #ff6a6a; color: #ff9b9b; }
 
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.stats span[aria-hidden="true"] { color: var(--line); }
+
+.statsDelta {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .options {
   display: flex;
   flex-wrap: wrap;

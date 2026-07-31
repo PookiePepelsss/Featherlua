@@ -212,6 +212,7 @@ function collectStat(stat: Stat, candidates: Map<number, Expr>, reassigned: Set<
         stat.names.length === 1 &&
         stat.init.length === 1 &&
         stat.names[0].attrib !== "close" &&
+        !stat.names[0].synthetic &&
         stat.names[0].symbolId !== undefined &&
         isPropagatableLiteral(stat.init[0])
       ) {

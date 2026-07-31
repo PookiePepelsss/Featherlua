@@ -11,6 +11,9 @@ import { optimize } from "./optimize";
 import { propagateConstants } from "./constant-propagate";
 import { removeUnusedLocals } from "./remove-unused-locals";
 import { hoistRepeatedGlobalAccess } from "./hoist-repeated-access";
+import { hoistRepeatedStrings } from "./hoist-repeated-strings";
+import { mergeAdjacentLocals } from "./merge-adjacent-locals";
+import { mergeAdjacentAssigns } from "./merge-adjacent-assigns";
 
 export type CompressResult =
   | { ok: true; output: string }
@@ -30,6 +33,16 @@ export interface AggressiveOptions {
   /** Remove locals (and local functions) referenced nowhere, when the
    * initializer can't possibly have a side effect or throw. */
   removeUnusedLocals: boolean;
+  /** Merge adjacent single-name `local` declarations into one statement
+   * (`local a=1 local b=2` -> `local a,b=1,2`). */
+  mergeAdjacentLocals: boolean;
+  /** Merge adjacent single-target plain-identifier assignments into one
+   * statement (`a=1 b=2` -> `a,b=1,2`). */
+  mergeAdjacentAssigns: boolean;
+  /** Hoist a string literal repeated 3+ times in one function's scope
+   * into a single local. Unconditionally safe -- strings have no
+   * observable identity or metatable in Lua. */
+  hoistRepeatedStrings: boolean;
   /** Drop type annotations, generics, and `type`/`export type` aliases
    * (zero runtime effect in Luau -- erased at compile time). */
   stripTypes: boolean;
@@ -49,6 +62,9 @@ export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   removeUnusedLocals: true,
   stripTypes: true,
   hoistRepeatedAccess: false,
+  mergeAdjacentLocals: true,
+  mergeAdjacentAssigns: true,
+  hoistRepeatedStrings: true,
 };
 
 function parseError(message: string, line = 0, col = 0): CompressResult {
@@ -65,6 +81,7 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
   // looks for candidates).
   if (options.foldConstants) optimize(chunk);
   if (options.hoistRepeatedAccess) hoistRepeatedGlobalAccess(chunk);
+  if (options.hoistRepeatedStrings) hoistRepeatedStrings(chunk);
   const resolved = resolveScopes(chunk);
   // Looped: propagation and unused-local removal feed each other (removing
   // an unused `local b = a` can make `a` itself newly unused), and folding
@@ -81,6 +98,10 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
       if (options.foldConstants) optimize(resolved.chunk);
     }
   }
+  // Runs once, after unused-local removal has settled -- a deletion can
+  // newly place two locals adjacent to each other.
+  if (options.mergeAdjacentLocals) mergeAdjacentLocals(resolved);
+  if (options.mergeAdjacentAssigns) mergeAdjacentAssigns(resolved);
   // Luau types are erased at compile time, so stripping them can't change
   // behavior -- only removes info for static analysis on the output.
   if (options.stripTypes) stripTypeInfo(resolved.chunk);

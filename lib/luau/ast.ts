@@ -143,6 +143,11 @@ export interface LocalName {
   symbolId?: number;
   attrib?: "const" | "close";
   typeAnnotation?: TypeSpan;
+  /** Set on locals synthesized by an optimization pass (e.g.
+   * hoist-repeated-strings.ts) so constant-propagate.ts can leave them
+   * alone -- propagating a literal back into every use site would
+   * silently undo the hoist that created this declaration. */
+  synthetic?: boolean;
 }
 
 export interface Param {

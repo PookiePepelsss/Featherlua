@@ -230,25 +230,43 @@ export default function Home() {
   const [mode, setMode] = useState<Mode>("safe");
   const [error, setError] = useState<string | null>(null);
   const [options, setOptions] = useState<AggressiveOptions>(DEFAULT_AGGRESSIVE_OPTIONS);
+  const [stats, setStats] = useState<{ inputChars: number; inputBytes: number; outputChars: number; outputBytes: number } | null>(null);
 
   function toggleOption(key: keyof AggressiveOptions) {
     setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
+  function byteLength(text: string) {
+    return new TextEncoder().encode(text).length;
+  }
+
   function compress() {
+    let result: string | null = null;
     if (mode === "safe") {
-      setOutput(compressSource(source));
+      result = compressSource(source);
+      setOutput(result);
       setError(null);
     } else {
-      const result = compressAggressive(source, options);
-      if (result.ok) {
-        setOutput(result.output);
+      const aggressiveResult = compressAggressive(source, options);
+      if (aggressiveResult.ok) {
+        result = aggressiveResult.output;
+        setOutput(result);
         setError(null);
       } else {
         setOutput("");
-        setError(result.error.message);
+        setError(aggressiveResult.error.message);
       }
     }
+    setStats(
+      result === null
+        ? null
+        : {
+            inputChars: source.length,
+            inputBytes: byteLength(source),
+            outputChars: result.length,
+            outputBytes: byteLength(result),
+          },
+    );
     setCopied(false);
   }
 
@@ -292,6 +310,21 @@ export default function Home() {
         />
       </section>
 
+      {stats && (
+        <div className="stats" aria-live="polite">
+          <span>Input: {stats.inputChars.toLocaleString()} chars / {stats.inputBytes.toLocaleString()} bytes</span>
+          <span aria-hidden="true">→</span>
+          <span>Output: {stats.outputChars.toLocaleString()} chars / {stats.outputBytes.toLocaleString()} bytes</span>
+          {stats.inputBytes > 0 && (
+            <span className="statsDelta">
+              {stats.outputBytes <= stats.inputBytes
+                ? `−${Math.round((1 - stats.outputBytes / stats.inputBytes) * 100)}%`
+                : `+${Math.round((stats.outputBytes / stats.inputBytes - 1) * 100)}%`}
+            </span>
+          )}
+        </div>
+      )}
+
       {mode === "aggressive" && (
         <fieldset className="options" aria-label="Aggressive mode passes">
           <legend className="srOnly">Aggressive mode passes</legend>
@@ -334,6 +367,30 @@ export default function Home() {
               onChange={() => toggleOption("stripTypes")}
             />
             Strip types
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={options.mergeAdjacentLocals}
+              onChange={() => toggleOption("mergeAdjacentLocals")}
+            />
+            Merge adjacent locals
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={options.mergeAdjacentAssigns}
+              onChange={() => toggleOption("mergeAdjacentAssigns")}
+            />
+            Merge adjacent assigns
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={options.hoistRepeatedStrings}
+              onChange={() => toggleOption("hoistRepeatedStrings")}
+            />
+            Dedupe repeated strings
           </label>
           <label title="Experimental: assumes accessed tables have no custom __index side effects. Off by default.">
             <input

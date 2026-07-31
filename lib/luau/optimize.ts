@@ -315,11 +315,33 @@ export function optimize(chunk: Chunk): Chunk {
   return chunk;
 }
 
+// True if `type` unconditionally exits the block it's in -- statements
+// after it in the same block never run.
+function isTerminator(stat: Stat): boolean {
+  return (
+    stat.type === "ReturnStat" ||
+    stat.type === "BreakStat" ||
+    stat.type === "ContinueStat" ||
+    stat.type === "GotoStat"
+  );
+}
+
+// A goto elsewhere (including one that already ran, earlier in this same
+// block) can only target a label directly in this block or an enclosing
+// one -- Luau's scoping never lets a label inside a nested do/if/loop body
+// be jumped to from outside it. So only a label at THIS level, not nested
+// deeper, can make code after a terminator reachable.
+function hasTopLevelLabel(stats: Stat[]): boolean {
+  return stats.some((s) => s.type === "LabelStat");
+}
+
 function optimizeBlock(stats: Stat[]): Stat[] {
   const kept: Stat[] = [];
-  for (const stat of stats) {
-    const result = optimizeStat(stat);
-    if (result) kept.push(result);
+  for (let i = 0; i < stats.length; i += 1) {
+    const result = optimizeStat(stats[i]);
+    if (!result) continue;
+    kept.push(result);
+    if (isTerminator(result) && !hasTopLevelLabel(stats.slice(i + 1))) break;
   }
   return kept;
 }
