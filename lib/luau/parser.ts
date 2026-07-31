@@ -450,7 +450,7 @@ class Parser {
     return this.parseAsExpr();
   }
 
-  // asexp ::= simpleexp ['::' Type] — a single, non-repeatable annotation.
+  // asexp ::= simpleexp ['::' Type] -- a single, non-repeatable annotation.
   private parseAsExpr(): Expr {
     const expr = this.parseSimpleExpr();
     if (this.atSymbol("::")) {
@@ -563,7 +563,7 @@ class Parser {
     if (tok.kind === "String" || tok.kind === "LongString") return true;
     // Only a genuinely NEW interpolated string (isFirst) can start call-sugar
     // args like `f\`hi\``. A non-first segment is the continuation/closing
-    // piece of an interpolation we're already inside parsing — treating it
+    // piece of an interpolation we're already inside parsing -- treating it
     // as call args here would wrongly swallow the enclosing string's tail.
     return tok.kind === "InterpStringSegment" && tok.isFirst === true;
   }

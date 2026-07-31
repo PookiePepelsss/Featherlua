@@ -23,7 +23,7 @@ export interface Token {
 }
 
 // Standard Lua reserved words plus Luau's `goto`. `continue`, `type`, and
-// `export` are intentionally NOT here — Luau treats them as contextual
+// `export` are intentionally NOT here -- Luau treats them as contextual
 // (soft) keywords, valid as plain identifiers everywhere except the
 // specific statement positions the parser recognizes them in.
 export const KEYWORDS = new Set([

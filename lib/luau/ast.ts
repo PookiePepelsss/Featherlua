@@ -223,7 +223,7 @@ export interface IndexExpr {
   index: Expr;
 }
 
-/** `object.name` — `name` is never renamed. */
+/** `object.name` -- `name` is never renamed. */
 export interface MemberExpr {
   type: "MemberExpr";
   object: Expr;
@@ -236,7 +236,7 @@ export interface CallExpr {
   args: Expr[];
 }
 
-/** `object:method(args)` — `method` is never renamed. */
+/** `object:method(args)` -- `method` is never renamed. */
 export interface MethodCallExpr {
   type: "MethodCallExpr";
   object: Expr;
@@ -294,7 +294,7 @@ export interface UnaryExpr {
   operand: Expr;
 }
 
-/** `expr :: Type` — per Luau's grammar (`asexp ::= simpleexp ['::' Type]`)
+/** `expr :: Type` -- per Luau's grammar (`asexp ::= simpleexp ['::' Type]`)
  * this is a single, non-repeatable annotation directly on a simpleexp,
  * binding tighter than unary and all binary operators. To double-assert,
  * source must use explicit parens: `(x :: number) :: string`. */
@@ -312,7 +312,7 @@ export interface IfExpr {
   elseExpr: Expr;
 }
 
-/** `(expr)` — NOT cosmetic. Truncates a multi-value expression (a call or
+/** `(expr)` -- NOT cosmetic. Truncates a multi-value expression (a call or
  * `...`) to exactly one value, which is semantically observable. The
  * printer must always emit real parens for this node. */
 export interface ParenExpr {
@@ -322,7 +322,7 @@ export interface ParenExpr {
 
 /** Opaque, verbatim-reprinted type annotation. Never parsed into a typed
  * AST, never touched by renaming (type annotations are erased at runtime
- * in Luau, so this has no behavioral effect — see plan for the accepted
+ * in Luau, so this has no behavioral effect -- see plan for the accepted
  * limitation this implies for `typeof(x)` references). */
 export interface TypeSpan {
   type: "TypeSpan";
