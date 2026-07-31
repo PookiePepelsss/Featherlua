@@ -1,4 +1,5 @@
 import type { Chunk, Expr, Stat } from "./ast";
+import { KEYWORDS } from "./tokens";
 
 // Folds literal expressions and removes dead branches/loops. Runs on the
 // raw parsed AST before scope resolution -- none of this needs symbol
@@ -51,6 +52,19 @@ function canonicalizeNumber(raw: string): string {
   if (value === undefined || !Number.isFinite(value) || Object.is(value, -0)) return raw;
   const formatted = formatLuauNumber(value);
   return formatted.length < raw.length ? formatted : raw;
+}
+
+const SIMPLE_STRING_INDEX_RE = /^(["'])([A-Za-z_][A-Za-z0-9_]*)\1$/;
+
+// `t["key"]` -> `t.key`: shorter, and semantically identical for a plain
+// string key with no escapes -- only matches raw text with no backslash
+// (never needs decoding) that's a bare identifier and not a reserved
+// keyword (`t["end"]` can't become `t.end`).
+function stringIndexToFieldName(raw: string): string | undefined {
+  const match = SIMPLE_STRING_INDEX_RE.exec(raw);
+  if (!match) return undefined;
+  const name = match[2];
+  return KEYWORDS.has(name) ? undefined : name;
 }
 
 function boolNode(v: boolean): Expr {
@@ -182,10 +196,15 @@ function foldExpr(expr: Expr): Expr {
     case "InterpolatedStringExpr":
       expr.parts = expr.parts.map((part) => (typeof part === "string" ? part : foldExpr(part)));
       return expr;
-    case "IndexExpr":
+    case "IndexExpr": {
       expr.object = foldExpr(expr.object);
       expr.index = foldExpr(expr.index);
+      if (expr.index.type === "StringExpr") {
+        const name = stringIndexToFieldName(expr.index.raw);
+        if (name) return { type: "MemberExpr", object: expr.object, name };
+      }
       return expr;
+    }
     case "MemberExpr":
       expr.object = foldExpr(expr.object);
       return expr;
@@ -350,6 +369,14 @@ function optimizeStat(stat: Stat): Stat | undefined {
   switch (stat.type) {
     case "LocalStat":
       stat.init = stat.init.map(foldExpr);
+      // `local x = nil` (or `local a, b = nil, nil`) is exactly what a bare
+      // `local x` already means -- every name past the given inits (or with
+      // no init at all) is implicitly nil regardless of count, so this only
+      // fires when EVERY given init is a literal nil (never a partial list,
+      // where a real value could still be lurking).
+      if (stat.init.length > 0 && stat.init.every((e) => e.type === "NilExpr")) {
+        stat.init = [];
+      }
       return stat;
     case "LocalFunctionStat":
       stat.func.body = optimizeBlock(stat.func.body);

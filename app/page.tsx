@@ -311,7 +311,11 @@ export default function Home() {
       </section>
 
       {stats && (
-        <div className="stats" aria-live="polite">
+        <div
+          className="stats"
+          aria-live="polite"
+          key={`${stats.inputBytes}-${stats.outputBytes}-${stats.outputChars}`}
+        >
           <span>Input: {stats.inputChars.toLocaleString()} chars / {stats.inputBytes.toLocaleString()} bytes</span>
           <span aria-hidden="true">→</span>
           <span>Output: {stats.outputChars.toLocaleString()} chars / {stats.outputBytes.toLocaleString()} bytes</span>
@@ -425,7 +429,13 @@ export default function Home() {
         <button className="primary" onClick={compress} disabled={!source.trim()}>
           Compress
         </button>
-        <button onClick={copyOutput} disabled={!output || Boolean(error)}>{copied ? "Copied" : "Copy"}</button>
+        <button
+          className={copied ? "copied" : undefined}
+          onClick={copyOutput}
+          disabled={!output || Boolean(error)}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
         <button onClick={downloadOutput} disabled={!output || Boolean(error)}>Download</button>
       </div>
     </main>

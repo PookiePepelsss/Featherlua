@@ -47,7 +47,10 @@ describe("optimize: number literal canonicalization (shortest round-tripping for
 
 describe("optimize: logical short-circuit folding (and/or return an OPERAND, not true/false)", () => {
   it("`false and X` folds to the falsy left operand itself, not `false`", () => {
-    expect(output("local x = nil and print(1)")).toBe("local a=nil");
+    // `nil and print(1)` folds to `nil` (the falsy left operand, print(1)
+    // never evaluated), which remove-nil-declaration then simplifies
+    // further to a bare `local a` -- same runtime meaning, fewer bytes.
+    expect(output("local x = nil and print(1)")).toBe("local a");
   });
 
   it("`true and X` folds to X (evaluated)", () => {
@@ -178,5 +181,72 @@ describe("optimize: folded literal-condition comparisons feed dead-branch elimin
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(() => parse(result.output)).not.toThrow();
+  });
+});
+
+const isolated = { rename: false, propagateConstants: false, removeUnusedLocals: false } as const;
+function outputIsolated(source: string): string {
+  const result = compressAggressive(source, isolated);
+  if (!result.ok) throw new Error(`expected ok:true, got error: ${result.error.message}`);
+  return result.output;
+}
+
+describe("optimize: string-index-to-field (`t[\"key\"]` -> `t.key`)", () => {
+  it("converts a plain identifier string key", () => {
+    expect(outputIsolated("local t = {}\nprint(t['x'])")).toBe("local t={}print(t.x)");
+  });
+
+  it("converts on an assignment target too", () => {
+    expect(outputIsolated("local t = {}\nt['x'] = 1")).toBe("local t={}t.x=1");
+  });
+
+  it("does not convert a key that isn't a valid identifier", () => {
+    expect(outputIsolated('local t = {}\nprint(t["1x"])')).toContain('t["1x"]');
+    expect(outputIsolated('local t = {}\nprint(t["a-b"])')).toContain('t["a-b"]');
+    expect(outputIsolated('local t = {}\nprint(t[""])')).toContain('t[""]');
+  });
+
+  it("does not convert a reserved keyword", () => {
+    expect(outputIsolated('local t = {}\nprint(t["end"])')).toContain('t["end"]');
+  });
+
+  it("does not convert a key containing an escape (raw text ambiguity)", () => {
+    expect(outputIsolated('local t = {}\nprint(t["x\\121"])')).toContain('t["x\\121"]');
+  });
+
+  it("does not convert a non-literal computed index", () => {
+    expect(outputIsolated("local t = {}\nlocal k = 'x'\nprint(t[k])")).toContain("[k]");
+  });
+
+  it("propagateConstants can expose a new conversion opportunity, and the loop catches it", () => {
+    // Once `k` is inlined to the literal 'x', the now-literal index
+    // qualifies for the same t["x"]->t.x simplification -- a nice example
+    // of the passes compounding within the convergence loop.
+    const result = compressAggressive("local t = {}\nlocal k = 'x'\nprint(t[k])", { rename: false });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toContain("t.x");
+  });
+});
+
+describe("optimize: remove-nil-declaration (`local x = nil` -> `local x`)", () => {
+  it("drops a single explicit nil initializer", () => {
+    expect(outputIsolated("local x = nil\nprint(x)")).toBe("local x print(x)");
+  });
+
+  it("drops multiple explicit nil initializers", () => {
+    expect(outputIsolated("local x, y = nil, nil\nprint(x, y)")).toBe("local x,y print(x,y)");
+  });
+
+  it("does not drop when only some names get an explicit nil (partial list)", () => {
+    // Here `nil` is a real, meaningful value for `y` (both end up nil
+    // either way) -- but the point of this rule is purely textual, so a
+    // partial list is left untouched rather than reasoning about arity.
+    const o = outputIsolated("local x, y = 1, nil\nprint(x, y)");
+    expect(o).toContain("=1,nil");
+  });
+
+  it("does not drop a real (non-nil) initializer", () => {
+    expect(outputIsolated("local x = 1\nprint(x)")).toContain("=1");
   });
 });
