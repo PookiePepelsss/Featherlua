@@ -66,6 +66,41 @@ describe("hoist-repeated-strings", () => {
     expect((o.match(new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) ?? []).length).toBe(1);
   });
 
+  it("is idempotent across re-compression, even with two competing hoist candidates", () => {
+    // Regression: re-parsing already-hoisted output turned `local x =
+    // "..."` back into an ordinary-looking candidate for
+    // propagateConstants (the "synthetic" marker doesn't survive being
+    // printed as text), which inlined it right back out -- while the
+    // *other* repeated string, now freshly duplicated 3x in the text,
+    // became eligible for hoisting instead. Every re-compress just swapped
+    // which string was hoisted, so output oscillated between two
+    // different sizes forever instead of settling. Fixed by making
+    // propagateConstants respect the same byte-savings threshold
+    // hoist-repeated-strings.ts uses, so it can never undo a hoist that
+    // pass would make again on the next pass.
+    const src =
+      'local function greet()\n' +
+      '  print("this is a fairly long repeated payload one")\n' +
+      '  print("this is a fairly long repeated payload one")\n' +
+      '  print("this is a fairly long repeated payload one")\n' +
+      'end\n' +
+      'local function warn2()\n' +
+      '  print("this is a fairly long repeated payload two")\n' +
+      '  print("this is a fairly long repeated payload two")\n' +
+      '  print("this is a fairly long repeated payload two")\n' +
+      'end\n' +
+      'greet()\n' +
+      'warn2()';
+    const first = out(src);
+    const second = out(first);
+    expect(second).toBe(first);
+    // Both strings hoisted (appear once each), not just whichever one
+    // "won" this round -- each shows up 1x as a declaration's literal,
+    // never inline at any of its 3 use sites.
+    expect((first.match(/payload one/g) ?? []).length).toBe(1);
+    expect((first.match(/payload two/g) ?? []).length).toBe(1);
+  });
+
   it("output remains valid, re-parseable Luau", () => {
     const s = '"this is a fairly long repeated payload"';
     const result = compressAggressive(`print(${s})\nprint(${s})\nprint(${s})`, bare);

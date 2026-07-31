@@ -1,5 +1,6 @@
 import type { Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
+import { stringLocalIsWorthKeeping } from "./hoist-repeated-strings";
 
 // Substitutes a local's value into its use sites when it's provably never
 // reassigned (scanning every assignment target in the program, not just
@@ -22,12 +23,24 @@ import type { ResolvedProgram } from "./scope-resolver";
 export function propagateConstants(resolved: ResolvedProgram): boolean {
   const candidates = new Map<number, Expr>(); // symbolId -> literal to substitute
   const reassigned = new Set<number>();
+  const refCounts = new Map<number, number>();
 
-  collectBlock(resolved.chunk.body, candidates, reassigned);
+  collectBlock(resolved.chunk.body, candidates, reassigned, refCounts);
 
   const eligible = new Map<number, Expr>();
   for (const [id, literal] of candidates) {
-    if (!reassigned.has(id)) eligible.set(id, literal);
+    if (reassigned.has(id)) continue;
+    // A string referenced enough times that hoist-repeated-strings.ts
+    // would hoist it into its own local must never be inlined back out --
+    // otherwise the two passes fight every other compress: hoist pulls a
+    // repeated literal into a local, this pass immediately inlines it
+    // back out (a plain `local x = "..."` looks like any other candidate
+    // once printed and re-parsed), the *other* previously-inline string
+    // gets hoisted instead next round, and output oscillates between two
+    // states forever instead of settling. Same threshold, same call, so
+    // the two passes can never disagree about which strings stay local.
+    if (literal.type === "StringExpr" && stringLocalIsWorthKeeping(literal.raw, refCounts.get(id) ?? 0)) continue;
+    eligible.set(id, literal);
   }
   if (eligible.size === 0) return false;
 
@@ -195,16 +208,27 @@ function cloneLiteral(expr: Expr): Expr {
 
 // === pass 1: collect candidate declarations + every reassignment target ===
 
-function collectBlock(stats: Stat[], candidates: Map<number, Expr>, reassigned: Set<number>) {
-  for (const stat of stats) collectStat(stat, candidates, reassigned);
+function collectBlock(
+  stats: Stat[],
+  candidates: Map<number, Expr>,
+  reassigned: Set<number>,
+  refCounts: Map<number, number>,
+) {
+  for (const stat of stats) collectStat(stat, candidates, reassigned, refCounts);
 }
 
 function markReassigned(target: Expr, reassigned: Set<number>) {
   if (target.type === "Identifier" && target.symbolId !== undefined) reassigned.add(target.symbolId);
 }
 
-function collectStat(stat: Stat, candidates: Map<number, Expr>, reassigned: Set<number>) {
-  const visit = (e: Expr) => collectExpr(e, candidates, reassigned);
+function collectStat(
+  stat: Stat,
+  candidates: Map<number, Expr>,
+  reassigned: Set<number>,
+  refCounts: Map<number, number>,
+) {
+  const visit = (e: Expr) => collectExpr(e, candidates, reassigned, refCounts);
+  const block = (b: Stat[]) => collectBlock(b, candidates, reassigned, refCounts);
   switch (stat.type) {
     case "LocalStat":
       stat.init.forEach(visit);
@@ -220,10 +244,10 @@ function collectStat(stat: Stat, candidates: Map<number, Expr>, reassigned: Set<
       }
       return;
     case "LocalFunctionStat":
-      collectBlock(stat.func.body, candidates, reassigned);
+      block(stat.func.body);
       return;
     case "FunctionDeclStat":
-      collectBlock(stat.func.body, candidates, reassigned);
+      block(stat.func.body);
       return;
     case "AssignStat":
       for (const t of stat.targets) markReassigned(t, reassigned);
@@ -239,32 +263,32 @@ function collectStat(stat: Stat, candidates: Map<number, Expr>, reassigned: Set<
       visit(stat.call);
       return;
     case "DoStat":
-      collectBlock(stat.body, candidates, reassigned);
+      block(stat.body);
       return;
     case "WhileStat":
       visit(stat.cond);
-      collectBlock(stat.body, candidates, reassigned);
+      block(stat.body);
       return;
     case "RepeatStat":
-      collectBlock(stat.body, candidates, reassigned);
+      block(stat.body);
       visit(stat.cond);
       return;
     case "IfStat":
       for (const clause of stat.clauses) {
         visit(clause.cond);
-        collectBlock(clause.body, candidates, reassigned);
+        block(clause.body);
       }
-      if (stat.elseBody) collectBlock(stat.elseBody, candidates, reassigned);
+      if (stat.elseBody) block(stat.elseBody);
       return;
     case "NumericForStat":
       visit(stat.start);
       visit(stat.stop);
       if (stat.step) visit(stat.step);
-      collectBlock(stat.body, candidates, reassigned);
+      block(stat.body);
       return;
     case "GenericForStat":
       stat.exprs.forEach(visit);
-      collectBlock(stat.body, candidates, reassigned);
+      block(stat.body);
       return;
     case "ReturnStat":
       stat.args.forEach(visit);
@@ -278,7 +302,13 @@ function collectStat(stat: Stat, candidates: Map<number, Expr>, reassigned: Set<
   }
 }
 
-function collectExpr(expr: Expr, candidates: Map<number, Expr>, reassigned: Set<number>) {
+function collectExpr(
+  expr: Expr,
+  candidates: Map<number, Expr>,
+  reassigned: Set<number>,
+  refCounts: Map<number, number>,
+) {
+  const visit = (e: Expr) => collectExpr(e, candidates, reassigned, refCounts);
   switch (expr.type) {
     case "NilExpr":
     case "TrueExpr":
@@ -286,56 +316,58 @@ function collectExpr(expr: Expr, candidates: Map<number, Expr>, reassigned: Set<
     case "VarargExpr":
     case "NumberExpr":
     case "StringExpr":
+      return;
     case "Identifier":
+      if (expr.symbolId !== undefined) refCounts.set(expr.symbolId, (refCounts.get(expr.symbolId) ?? 0) + 1);
       return;
     case "InterpolatedStringExpr":
-      for (const part of expr.parts) if (typeof part !== "string") collectExpr(part, candidates, reassigned);
+      for (const part of expr.parts) if (typeof part !== "string") visit(part);
       return;
     case "IndexExpr":
-      collectExpr(expr.object, candidates, reassigned);
-      collectExpr(expr.index, candidates, reassigned);
+      visit(expr.object);
+      visit(expr.index);
       return;
     case "MemberExpr":
-      collectExpr(expr.object, candidates, reassigned);
+      visit(expr.object);
       return;
     case "CallExpr":
-      collectExpr(expr.callee, candidates, reassigned);
-      expr.args.forEach((a) => collectExpr(a, candidates, reassigned));
+      visit(expr.callee);
+      expr.args.forEach(visit);
       return;
     case "MethodCallExpr":
-      collectExpr(expr.object, candidates, reassigned);
-      expr.args.forEach((a) => collectExpr(a, candidates, reassigned));
+      visit(expr.object);
+      expr.args.forEach(visit);
       return;
     case "FunctionExpr":
-      collectBlock(expr.body, candidates, reassigned);
+      collectBlock(expr.body, candidates, reassigned, refCounts);
       return;
     case "TableExpr":
       for (const field of expr.fields) {
-        if (field.kind === "computed") collectExpr(field.key, candidates, reassigned);
-        collectExpr(field.value, candidates, reassigned);
+        if (field.kind === "computed") visit(field.key);
+        visit(field.value);
       }
       return;
     case "BinaryExpr":
-      collectExpr(expr.left, candidates, reassigned);
-      collectExpr(expr.right, candidates, reassigned);
+      visit(expr.left);
+      visit(expr.right);
       return;
     case "UnaryExpr":
-      collectExpr(expr.operand, candidates, reassigned);
+      visit(expr.operand);
       return;
     case "TypeAssertionExpr":
-      collectExpr(expr.expr, candidates, reassigned);
+      visit(expr.expr);
       return;
     case "IfExpr":
-      collectExpr(expr.cond, candidates, reassigned);
-      collectExpr(expr.thenExpr, candidates, reassigned);
+      visit(expr.cond);
+      visit(expr.thenExpr);
       for (const clause of expr.elseifs) {
-        collectExpr(clause.cond, candidates, reassigned);
-        collectExpr(clause.expr, candidates, reassigned);
+        visit(clause.cond);
+        visit(clause.expr);
       }
-      collectExpr(expr.elseExpr, candidates, reassigned);
+      visit(expr.elseExpr);
       return;
     case "ParenExpr":
-      collectExpr(expr.expr, candidates, reassigned);
+      visit(expr.expr);
       return;
   }
 }
