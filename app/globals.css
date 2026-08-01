@@ -210,13 +210,13 @@ textarea[aria-invalid="true"] { color: #ff9b9b; }
 }
 
 .options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
   margin: 0;
   border: 1px solid var(--line);
   border-radius: 9px;
-  padding: 11px 14px;
+  padding: 7px;
   background: rgb(16 17 15 / 72%);
   animation: fadeSlideIn 220ms ease;
 }
@@ -224,17 +224,66 @@ textarea[aria-invalid="true"] { color: #ff9b9b; }
 .options label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  min-width: 0;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: rgb(255 255 255 / 1.5%);
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
-  transition: color 140ms ease;
+  transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
 }
 
-.options label:hover { color: var(--text); }
+.options label:hover {
+  border-color: rgb(255 255 255 / 5%);
+  background: rgb(255 255 255 / 3%);
+  color: var(--text);
+}
 
 .options input[type="checkbox"] {
-  accent-color: var(--accent);
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  display: grid;
+  place-content: center;
+  margin: 0;
+  border: 1px solid #4a4e43;
+  border-radius: 4px;
+  background: #11120f;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.options input[type="checkbox"]::after {
+  content: "";
+  width: 7px;
+  height: 4px;
+  border-left: 1.5px solid #0a0a0a;
+  border-bottom: 1.5px solid #0a0a0a;
+  opacity: 0;
+  transform: translateY(-1px) rotate(-45deg) scale(0.6);
+  transition: opacity 120ms ease, transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.options input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgb(213 255 87 / 7%);
+}
+
+.options input[type="checkbox"]:checked::after {
+  opacity: 1;
+  transform: translateY(-1px) rotate(-45deg) scale(1);
+}
+
+.options input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .actions {
@@ -265,13 +314,22 @@ button.dialectTrigger {
   justify-content: space-between;
   gap: 12px;
   padding: 0 12px;
+  border-color: rgb(213 255 87 / 20%);
+  background:
+    linear-gradient(125deg, rgb(213 255 87 / 15%), rgb(121 161 255 / 9%) 58%, rgb(200 115 255 / 8%)),
+    rgb(20 23 18 / 72%);
+  box-shadow: inset 0 1px rgb(255 255 255 / 6%), 0 8px 26px rgb(0 0 0 / 15%);
+  backdrop-filter: blur(18px) saturate(135%);
   font-weight: 500;
   text-align: left;
 }
 
 .dialectTrigger.dialectOpen {
-  border-color: #515151;
-  background: #202020;
+  border-color: rgb(213 255 87 / 38%);
+  background:
+    linear-gradient(125deg, rgb(213 255 87 / 20%), rgb(121 161 255 / 12%) 58%, rgb(200 115 255 / 10%)),
+    rgb(20 23 18 / 82%);
+  box-shadow: inset 0 1px rgb(255 255 255 / 8%), 0 10px 32px rgb(0 0 0 / 22%), 0 0 0 3px rgb(213 255 87 / 4%);
 }
 
 .dialectChevron {
@@ -298,11 +356,13 @@ button.dialectTrigger {
   display: grid;
   gap: 2px;
   padding: 5px;
-  border: 1px solid #343434;
+  border: 1px solid rgb(255 255 255 / 11%);
   border-radius: 10px;
-  background: rgb(20 22 18 / 96%);
-  box-shadow: 0 20px 54px rgb(0 0 0 / 55%), inset 0 1px rgb(255 255 255 / 3%);
-  backdrop-filter: blur(18px);
+  background:
+    linear-gradient(145deg, rgb(213 255 87 / 9%), rgb(120 157 255 / 6%) 52%, rgb(196 105 255 / 5%)),
+    rgb(16 18 15 / 76%);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 58%), inset 0 1px rgb(255 255 255 / 8%);
+  backdrop-filter: blur(24px) saturate(150%);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -346,7 +406,7 @@ button.dialectOption {
 
 button.dialectOption:hover,
 button.dialectOption.optionHighlighted {
-  background: #242424;
+  background: linear-gradient(90deg, rgb(213 255 87 / 10%), rgb(255 255 255 / 4%));
   color: var(--text);
 }
 
@@ -381,6 +441,12 @@ button.dialectOption.optionHighlighted {
   border: none;
   border-radius: 4px;
   background: transparent;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.modeToggle button:hover:not(:disabled),
+.modeToggle button:active:not(:disabled) {
+  transform: none;
 }
 
 .modeToggle button.modeActive {
@@ -448,4 +514,10 @@ button.copied {
   .modeToggle { order: 2; width: 100%; }
   .modeToggle button { flex: 1; }
   .actions > button { flex: 1; min-width: 0; }
+  .options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .options label { white-space: normal; }
+}
+
+@media (max-width: 430px) {
+  .options { grid-template-columns: 1fr; }
 }
