@@ -18,6 +18,15 @@ export interface ExecuteResult {
   error?: string;
 }
 
+export async function verifyOfficialLuauWasm(wasmBinary: Uint8Array) {
+  const copy = Uint8Array.from(wasmBinary);
+  const digest = await crypto.subtle.digest("SHA-256", copy.buffer);
+  const actual = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (actual !== OFFICIAL_LUAU_WASM_SHA256) {
+    throw new Error("Official Luau compiler integrity check failed.");
+  }
+}
+
 export async function createOfficialLuau(wasmBinary: Uint8Array): Promise<LuauModule> {
   return createLuauModule({
     wasmBinary,

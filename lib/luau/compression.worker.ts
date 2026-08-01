@@ -3,7 +3,12 @@
 import { compressAggressive } from "./compress-aggressive";
 import type { CompressionRequest, CompressionResponse } from "./compression-protocol";
 import { compressSafe } from "./compress-safe";
-import { compileWithOfficialLuau, createOfficialLuau, type LuauModule } from "./official/runtime";
+import {
+  compileWithOfficialLuau,
+  createOfficialLuau,
+  verifyOfficialLuauWasm,
+  type LuauModule,
+} from "./official/runtime";
 
 let modulePromise: Promise<LuauModule> | undefined;
 
@@ -13,7 +18,11 @@ function getOfficialModule() {
       if (!response.ok) throw new Error(`Unable to load official Luau compiler (${response.status}).`);
       return response.arrayBuffer();
     })
-    .then((buffer) => createOfficialLuau(new Uint8Array(buffer)));
+    .then(async (buffer) => {
+      const wasm = new Uint8Array(buffer);
+      await verifyOfficialLuauWasm(wasm);
+      return createOfficialLuau(wasm);
+    });
   return modulePromise;
 }
 

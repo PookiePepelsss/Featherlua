@@ -6,6 +6,7 @@ import {
   compileWithOfficialLuau,
   createOfficialLuau,
   executeWithOfficialLuau,
+  verifyOfficialLuauWasm,
   type LuauModule,
 } from "../official/runtime";
 import { corpusScenarios } from "./corpus-scenarios";
@@ -14,10 +15,16 @@ let module: LuauModule;
 
 beforeAll(async () => {
   const wasm = readFileSync(join(process.cwd(), "public", "wasm", "luau.wasm"));
+  await verifyOfficialLuauWasm(new Uint8Array(wasm));
   module = await createOfficialLuau(new Uint8Array(wasm));
 }, 30_000);
 
 describe("official Luau compiler and differential execution", () => {
+  it("rejects a modified compiler binary", async () => {
+    const changed = new Uint8Array([0, 97, 115, 109]);
+    await expect(verifyOfficialLuauWasm(changed)).rejects.toThrow("integrity check failed");
+  });
+
   it("rejects invalid syntax and accepts valid compressed output", () => {
     expect(compileWithOfficialLuau(module, "local =").success).toBe(false);
     const result = compressAggressive("local longName=20+22\nprint(longName)");

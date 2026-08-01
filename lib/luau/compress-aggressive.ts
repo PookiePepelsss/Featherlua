@@ -184,15 +184,20 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
   let best = compressAggressiveCore(source, active);
   if (!best.ok) return best;
 
-  const rolledBack: string[] = [];
-  for (const key of OPTION_KEYS) {
-    if (!active[key]) continue;
-    const candidateOptions = { ...active, [key]: false };
-    const candidate = compressAggressiveCore(source, candidateOptions);
-    if (candidate.ok && byteLength(candidate.output) < byteLength(best.output)) {
-      best = candidate;
-      active = candidateOptions;
-      rolledBack.push(OPTION_LABELS[key] ?? key);
+  const rolledBack = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const key of OPTION_KEYS) {
+      if (!active[key]) continue;
+      const candidateOptions = { ...active, [key]: false };
+      const candidate = compressAggressiveCore(source, candidateOptions);
+      if (candidate.ok && byteLength(candidate.output) < byteLength(best.output)) {
+        best = candidate;
+        active = candidateOptions;
+        rolledBack.add(OPTION_LABELS[key] ?? key);
+        changed = true;
+      }
     }
   }
 
@@ -206,7 +211,7 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
     ok: true,
     output: best.output,
     warning,
-    rolledBack,
+    rolledBack: [...rolledBack],
     appliedOptions: active,
   };
 }
