@@ -409,14 +409,6 @@ export default function Home() {
             />
             Merge adjacent assigns
           </label>
-          <label title="Experimental: assigning to a table field can invoke a custom __newindex, and merging changes the order handlers fire in. Off by default.">
-            <input
-              type="checkbox"
-              checked={options.mergeAdjacentAssignsAcrossFields}
-              onChange={() => toggleOption("mergeAdjacentAssignsAcrossFields")}
-            />
-            Merge adjacent field assigns (experimental)
-          </label>
           <label>
             <input
               type="checkbox"
@@ -424,22 +416,6 @@ export default function Home() {
               onChange={() => toggleOption("hoistRepeatedStrings")}
             />
             Dedupe repeated strings
-          </label>
-          <label title="Experimental: assumes accessed tables have no custom __index side effects. Off by default.">
-            <input
-              type="checkbox"
-              checked={options.hoistRepeatedAccess}
-              onChange={() => toggleOption("hoistRepeatedAccess")}
-            />
-            Hoist repeated access (experimental)
-          </label>
-          <label title="Experimental: assumes reading the global has no side effect. Off by default.">
-            <input
-              type="checkbox"
-              checked={options.aliasRepeatedGlobalCalls}
-              onChange={() => toggleOption("aliasRepeatedGlobalCalls")}
-            />
-            Alias repeated global calls (experimental)
           </label>
         </fieldset>
       )}

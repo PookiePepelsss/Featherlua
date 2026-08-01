@@ -10,12 +10,10 @@ import { stripTypeInfo } from "./strip-types";
 import { optimize } from "./optimize";
 import { propagateConstants } from "./constant-propagate";
 import { removeUnusedLocals } from "./remove-unused-locals";
-import { hoistRepeatedGlobalAccess, resetHoistCounter } from "./hoist-repeated-access";
 import { hoistRepeatedStrings, resetStringHoistCounter } from "./hoist-repeated-strings";
 import { mergeAdjacentLocals } from "./merge-adjacent-locals";
 import { mergeAdjacentAssigns } from "./merge-adjacent-assigns";
-import { aliasRepeatedGlobalCalls, resetAliasCounter } from "./alias-repeated-global-calls";
-import { detectReflectionRisks, hasExoticEnvironmentSignal, type ReflectionRisk } from "./exotic-environment-guard";
+import { detectReflectionRisks, type ReflectionRisk } from "./reflection-risks";
 
 export type CompressResult =
   | { ok: true; output: string; warning?: string }
@@ -30,9 +28,6 @@ export interface AggressiveOptions {
   mergeAdjacentAssigns: boolean;
   hoistRepeatedStrings: boolean;
   stripTypes: boolean;
-  hoistRepeatedAccess: boolean;
-  aliasRepeatedGlobalCalls: boolean;
-  mergeAdjacentAssignsAcrossFields: boolean;
 }
 
 export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
@@ -41,12 +36,9 @@ export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   propagateConstants: true,
   removeUnusedLocals: true,
   stripTypes: true,
-  hoistRepeatedAccess: false,
   mergeAdjacentLocals: true,
   mergeAdjacentAssigns: true,
   hoistRepeatedStrings: true,
-  aliasRepeatedGlobalCalls: false,
-  mergeAdjacentAssignsAcrossFields: false,
 };
 
 function parseError(message: string, line = 0, col = 0): CompressResult {
@@ -55,8 +47,6 @@ function parseError(message: string, line = 0, col = 0): CompressResult {
 
 export function transformForAggressive(chunk: Chunk, options: AggressiveOptions = DEFAULT_AGGRESSIVE_OPTIONS): ResolvedProgram {
   if (options.foldConstants) optimize(chunk);
-  if (options.hoistRepeatedAccess) hoistRepeatedGlobalAccess(chunk);
-  if (options.aliasRepeatedGlobalCalls) aliasRepeatedGlobalCalls(chunk, options.rename);
   if (options.hoistRepeatedStrings) hoistRepeatedStrings(chunk);
   const resolved = resolveScopes(chunk);
   if (options.propagateConstants || options.removeUnusedLocals) {
@@ -69,7 +59,7 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
     }
   }
   if (options.mergeAdjacentLocals) mergeAdjacentLocals(resolved);
-  if (options.mergeAdjacentAssigns) mergeAdjacentAssigns(resolved, options.mergeAdjacentAssignsAcrossFields);
+  if (options.mergeAdjacentAssigns) mergeAdjacentAssigns(resolved);
   if (options.stripTypes) stripTypeInfo(resolved.chunk);
   return resolved;
 }
@@ -82,9 +72,6 @@ const OPTION_LABELS: Partial<Record<keyof AggressiveOptions, string>> = {
   mergeAdjacentLocals: "Merge adjacent locals",
   mergeAdjacentAssigns: "Merge adjacent assigns",
   hoistRepeatedStrings: "Dedupe repeated strings",
-  hoistRepeatedAccess: "Hoist repeated access",
-  aliasRepeatedGlobalCalls: "Alias repeated global calls",
-  mergeAdjacentAssignsAcrossFields: "Merge adjacent field assigns",
 };
 
 const RISK_OPTIONS: Record<Exclude<ReflectionRisk, "bytecode">, readonly (keyof AggressiveOptions)[]> = {
@@ -95,16 +82,12 @@ const RISK_OPTIONS: Record<Exclude<ReflectionRisk, "bytecode">, readonly (keyof 
     "removeUnusedLocals",
     "mergeAdjacentLocals",
     "hoistRepeatedStrings",
-    "hoistRepeatedAccess",
-    "aliasRepeatedGlobalCalls",
   ],
   constants: [
     "foldConstants",
     "propagateConstants",
     "removeUnusedLocals",
     "hoistRepeatedStrings",
-    "hoistRepeatedAccess",
-    "aliasRepeatedGlobalCalls",
   ],
   prototypes: ["foldConstants", "propagateConstants", "removeUnusedLocals"],
   stack: [
@@ -114,9 +97,6 @@ const RISK_OPTIONS: Record<Exclude<ReflectionRisk, "bytecode">, readonly (keyof 
     "mergeAdjacentLocals",
     "mergeAdjacentAssigns",
     "hoistRepeatedStrings",
-    "hoistRepeatedAccess",
-    "aliasRepeatedGlobalCalls",
-    "mergeAdjacentAssignsAcrossFields",
   ],
   metadata: [
     "rename",
@@ -126,9 +106,6 @@ const RISK_OPTIONS: Record<Exclude<ReflectionRisk, "bytecode">, readonly (keyof 
     "mergeAdjacentLocals",
     "mergeAdjacentAssigns",
     "hoistRepeatedStrings",
-    "hoistRepeatedAccess",
-    "aliasRepeatedGlobalCalls",
-    "mergeAdjacentAssignsAcrossFields",
   ],
   broad: Object.keys(OPTION_LABELS) as (keyof AggressiveOptions)[],
 };
@@ -161,9 +138,7 @@ function reflectionWarning(chunk: Chunk, options: AggressiveOptions): string | u
 }
 
 export function compressAggressive(source: string, options: Partial<AggressiveOptions> = {}): CompressResult {
-  resetHoistCounter();
   resetStringHoistCounter();
-  resetAliasCounter();
   const opts: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
   let parsed;
   try {
@@ -177,12 +152,6 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
   const warnings: string[] = [];
   const reflection = reflectionWarning(chunk, opts);
   if (reflection) warnings.push(reflection);
-  if ((opts.hoistRepeatedAccess || opts.aliasRepeatedGlobalCalls) && hasExoticEnvironmentSignal(chunk)) {
-    warnings.push(
-      "This script references an environment-manipulation API (_G, getfenv, hookmetamethod, ...). " +
-        "The selected experimental passes assume reading a global has no side effect, so double-check their output.",
-    );
-  }
   const resolved = transformForAggressive(chunk, opts);
   const renameMap = opts.rename ? computeRenameMap(resolved) : undefined;
   const printed = print(chunk, renameMap);

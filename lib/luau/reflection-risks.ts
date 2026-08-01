@@ -1,24 +1,6 @@
 import type { Chunk, Expr } from "./ast";
 import { someBlock } from "./ast-search";
 
-const EXOTIC_ENVIRONMENT_SIGNALS = new Set([
-  "_G",
-  "_ENV",
-  "getfenv",
-  "setfenv",
-  "getrawmetatable",
-  "setrawmetatable",
-  "hookmetamethod",
-  "hookfunction",
-  "getgenv",
-  "getrenv",
-  "newcclosure",
-  "checkcaller",
-  "iscclosure",
-  "islclosure",
-  "clonefunction",
-]);
-
 export type ReflectionRisk =
   | "bindings"
   | "constants"
@@ -95,11 +77,4 @@ export function detectReflectionRisks(chunk: Chunk): Set<ReflectionRisk> {
     return false;
   });
   return risks;
-}
-
-export function hasExoticEnvironmentSignal(chunk: Chunk): boolean {
-  return someBlock(
-    chunk.body,
-    (expr) => expr.type === "Identifier" && EXOTIC_ENVIRONMENT_SIGNALS.has(expr.name),
-  );
 }

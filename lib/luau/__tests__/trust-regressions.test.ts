@@ -13,9 +13,6 @@ const noPasses: AggressiveOptions = {
   mergeAdjacentAssigns: false,
   hoistRepeatedStrings: false,
   stripTypes: false,
-  hoistRepeatedAccess: false,
-  aliasRepeatedGlobalCalls: false,
-  mergeAdjacentAssignsAcrossFields: false,
 };
 
 function output(source: string, options: Partial<AggressiveOptions> = {}): string {

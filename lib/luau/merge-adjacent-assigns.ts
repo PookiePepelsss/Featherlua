@@ -3,23 +3,18 @@ import type { ResolvedProgram } from "./scope-resolver";
 import { isCallExpr, someExpr } from "./ast-search";
 import { isDefinitelyInert } from "./effect-analysis";
 
-export function mergeAdjacentAssigns(resolved: ResolvedProgram, includeMemberTargets: boolean): boolean {
+export function mergeAdjacentAssigns(resolved: ResolvedProgram): boolean {
   let changed = false;
-  resolved.chunk.body = mergeBlock(resolved.chunk.body, includeMemberTargets, () => {
+  resolved.chunk.body = mergeBlock(resolved.chunk.body, () => {
     changed = true;
   });
   return changed;
 }
 
-function isMergeableTarget(target: Expr, includeMemberTargets: boolean): boolean {
-  if (target.type === "Identifier") return true;
-  return includeMemberTargets && target.type === "MemberExpr" && target.object.type === "Identifier";
-}
-
-function isMergeableStat(stat: AssignStat, includeMemberTargets: boolean): boolean {
+function isMergeableStat(stat: AssignStat): boolean {
   return (
     stat.targets.length === stat.values.length &&
-    stat.targets.every((t) => isMergeableTarget(t, includeMemberTargets))
+    stat.targets.every((target) => target.type === "Identifier")
   );
 }
 
@@ -47,21 +42,21 @@ function referencesTarget(expr: Expr, target: Expr): boolean {
   return someExpr(expr, (e) => targetIdentity(e) === targetId);
 }
 
-function canMerge(a: Stat, b: Stat, includeMemberTargets: boolean): a is AssignStat {
+function canMerge(a: Stat, b: Stat): a is AssignStat {
   if (a.type !== "AssignStat" || b.type !== "AssignStat") return false;
-  if (!isMergeableStat(a, includeMemberTargets) || !isMergeableStat(b, includeMemberTargets)) return false;
+  if (!isMergeableStat(a) || !isMergeableStat(b)) return false;
   if (a.values.some((v) => someExpr(v, isCallExpr)) || b.values.some((v) => someExpr(v, isCallExpr))) return false;
   if (!b.values.every(isDefinitelyInert)) return false;
   if (hasDuplicateTarget([...a.targets, ...b.targets])) return false;
   return !b.values.some((v) => a.targets.some((t) => referencesTarget(v, t)));
 }
 
-function mergeBlock(stats: Stat[], includeMemberTargets: boolean, onChange: () => void): Stat[] {
-  const processed = stats.map((s) => mergeInStat(s, includeMemberTargets, onChange));
+function mergeBlock(stats: Stat[], onChange: () => void): Stat[] {
+  const processed = stats.map((s) => mergeInStat(s, onChange));
   const out: Stat[] = [];
   for (const stat of processed) {
     const prev = out[out.length - 1];
-    if (prev && canMerge(prev, stat, includeMemberTargets)) {
+    if (prev && canMerge(prev, stat)) {
       const b = stat as AssignStat;
       prev.targets = prev.targets.concat(b.targets);
       prev.values = prev.values.concat(b.values);
@@ -73,9 +68,9 @@ function mergeBlock(stats: Stat[], includeMemberTargets: boolean, onChange: () =
   return out;
 }
 
-function mergeInStat(stat: Stat, includeMemberTargets: boolean, onChange: () => void): Stat {
-  const visit = (e: Expr) => mergeInExpr(e, includeMemberTargets, onChange);
-  const block = (b: Stat[]) => mergeBlock(b, includeMemberTargets, onChange);
+function mergeInStat(stat: Stat, onChange: () => void): Stat {
+  const visit = (e: Expr) => mergeInExpr(e, onChange);
+  const block = (b: Stat[]) => mergeBlock(b, onChange);
   switch (stat.type) {
     case "LocalStat":
       stat.init.forEach(visit);
@@ -134,8 +129,8 @@ function mergeInStat(stat: Stat, includeMemberTargets: boolean, onChange: () => 
   }
 }
 
-function mergeInExpr(expr: Expr, includeMemberTargets: boolean, onChange: () => void): void {
-  const visit = (e: Expr) => mergeInExpr(e, includeMemberTargets, onChange);
+function mergeInExpr(expr: Expr, onChange: () => void): void {
+  const visit = (e: Expr) => mergeInExpr(e, onChange);
   switch (expr.type) {
     case "InterpolatedStringExpr":
       for (const part of expr.parts) if (typeof part !== "string") visit(part);
@@ -156,7 +151,7 @@ function mergeInExpr(expr: Expr, includeMemberTargets: boolean, onChange: () => 
       expr.args.forEach(visit);
       return;
     case "FunctionExpr":
-      expr.body = mergeBlock(expr.body, includeMemberTargets, onChange);
+      expr.body = mergeBlock(expr.body, onChange);
       return;
     case "TableExpr":
       for (const field of expr.fields) {
