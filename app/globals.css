@@ -292,9 +292,10 @@ textarea[aria-invalid="true"] { color: #ff9b9b; }
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 6px;
-  background: rgb(14 15 13 / 88%);
+  background: rgb(14 15 13 / 64%);
   box-shadow: 0 14px 40px rgb(0 0 0 / 22%), inset 0 1px rgb(255 255 255 / 2%);
-  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  backdrop-filter: blur(18px) saturate(145%);
 }
 
 .dialectPicker {
@@ -312,18 +313,29 @@ button.dialectTrigger {
   justify-content: space-between;
   gap: 12px;
   padding: 0 12px;
-  border-color: rgb(213 255 87 / 20%);
-  background: rgb(20 23 18 / 78%);
-  box-shadow: inset 0 1px rgb(255 255 255 / 6%), 0 8px 26px rgb(0 0 0 / 15%);
-  backdrop-filter: blur(18px) saturate(135%);
+  border-color: rgb(255 255 255 / 14%);
+  background: rgb(20 23 18 / 44%);
+  box-shadow: inset 0 1px rgb(255 255 255 / 12%), inset 0 -1px rgb(0 0 0 / 20%), 0 8px 26px rgb(0 0 0 / 18%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  backdrop-filter: blur(22px) saturate(165%);
   font-weight: 500;
   text-align: left;
 }
 
+button.dialectTrigger:hover:not(:disabled) {
+  border-color: rgb(255 255 255 / 14%);
+  background: rgb(20 23 18 / 44%);
+}
+
 .dialectTrigger.dialectOpen {
   border-color: rgb(213 255 87 / 38%);
-  background: rgb(25 29 22 / 86%);
-  box-shadow: inset 0 1px rgb(255 255 255 / 8%), 0 10px 32px rgb(0 0 0 / 22%), 0 0 0 3px rgb(213 255 87 / 4%);
+  background: rgb(25 29 22 / 56%);
+  box-shadow: inset 0 1px rgb(255 255 255 / 15%), inset 0 -1px rgb(0 0 0 / 24%), 0 12px 34px rgb(0 0 0 / 28%), 0 0 0 3px rgb(213 255 87 / 5%);
+}
+
+button.dialectTrigger.dialectOpen:hover:not(:disabled) {
+  border-color: rgb(213 255 87 / 38%);
+  background: rgb(25 29 22 / 56%);
 }
 
 .dialectChevron {
@@ -350,11 +362,12 @@ button.dialectTrigger {
   display: grid;
   gap: 2px;
   padding: 5px;
-  border: 1px solid rgb(255 255 255 / 11%);
+  border: 1px solid rgb(255 255 255 / 17%);
   border-radius: 10px;
-  background: rgb(16 18 15 / 78%);
-  box-shadow: 0 24px 64px rgb(0 0 0 / 58%), inset 0 1px rgb(255 255 255 / 8%);
-  backdrop-filter: blur(24px) saturate(150%);
+  background: rgb(13 15 12 / 52%);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 62%), inset 0 1px rgb(255 255 255 / 15%), inset 0 -1px rgb(0 0 0 / 26%);
+  -webkit-backdrop-filter: blur(28px) saturate(175%);
+  backdrop-filter: blur(28px) saturate(175%);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -387,7 +400,7 @@ button.dialectOption {
   text-align: left;
   opacity: 0;
   transform: translateY(3px);
-  transition: color 120ms ease, background 120ms ease, opacity 140ms ease, transform 160ms ease;
+  transition: opacity 140ms ease, transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .menuOpen .dialectOption {
@@ -433,15 +446,7 @@ button.dialectOption.optionHighlighted {
   border: none;
   border-radius: 4px;
   background: transparent;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
-}
-
-.modeToggle button:hover:not(:disabled) {
-  transform: none;
-}
-
-.modeToggle button:active:not(:disabled) {
-  transform: translateY(0) scale(0.97);
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .modeToggle button.modeActive {
@@ -461,13 +466,17 @@ button {
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
-  transition: background 150ms ease, transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 150ms ease, box-shadow 180ms ease;
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-button:hover:not(:disabled) { background: #20231d; border-color: #3b4034; transform: translateY(-1px); }
-button:active:not(:disabled) { transform: translateY(0) scale(0.97); }
+button:hover:not(:disabled) { background: #20231d; border-color: #3b4034; transform: none; }
+button:active:not(:disabled) { transform: scale(0.97); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+.menuOpen button.dialectOption:active {
+  transform: scale(0.97);
+}
 
 button.primary {
   border-color: var(--accent);
@@ -487,16 +496,9 @@ button.primary.isWorking {
   50% { opacity: 0.72; box-shadow: 0 5px 18px rgb(213 255 87 / 8%); }
 }
 
-@keyframes copiedBounce {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.08); }
-  100% { transform: scale(1); }
-}
-
 button.copied {
   border-color: var(--accent);
   color: var(--accent);
-  animation: copiedBounce 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @media (max-width: 700px) {
