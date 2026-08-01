@@ -13,10 +13,10 @@ import { removeUnusedLocals } from "./remove-unused-locals";
 import { hoistRepeatedStrings, resetStringHoistCounter } from "./hoist-repeated-strings";
 import { mergeAdjacentLocals } from "./merge-adjacent-locals";
 import { mergeAdjacentAssigns } from "./merge-adjacent-assigns";
-import { detectReflectionRisks, type ReflectionRisk } from "./reflection-risks";
+import { detectReflectionUsage, type ReflectionRisk } from "./reflection-risks";
 
 export type CompressResult =
-  | { ok: true; output: string; warning?: string }
+  | { ok: true; output: string; warning?: string; rolledBack?: string[]; appliedOptions?: AggressiveOptions }
   | { ok: false; error: { message: string; line: number; col: number } };
 
 export interface AggressiveOptions {
@@ -111,10 +111,11 @@ const RISK_OPTIONS: Record<Exclude<ReflectionRisk, "bytecode">, readonly (keyof 
 };
 
 function reflectionWarning(chunk: Chunk, options: AggressiveOptions): string | undefined {
-  const risks = detectReflectionRisks(chunk);
+  const { risks, apis } = detectReflectionUsage(chunk);
   if (!risks.size) return undefined;
+  const detected = ` Detected: ${[...apis].sort().join(", ")}.`;
   if (risks.has("bytecode")) {
-    return "This script inspects compiled bytecode. Any minification can change bytecode or hashes; test the output in your executor.";
+    return `This script inspects compiled bytecode.${detected} Any minification can change bytecode or hashes; test the output in your executor.`;
   }
 
   const relevant = new Set<keyof AggressiveOptions>();
@@ -128,18 +129,17 @@ function reflectionWarning(chunk: Chunk, options: AggressiveOptions): string | u
     .filter((label): label is string => Boolean(label));
   if (!labels.length) {
     return risks.has("metadata")
-      ? "Output formatting can change function names or line information reported by debug APIs. Test the output in your executor."
+      ? `Output formatting can change function names or line information reported by debug APIs.${detected} Test the output in your executor.`
       : undefined;
   }
 
   const metadataNote = risks.has("metadata") ? " Output formatting may also change reported line information." : "";
-  return "This script uses reflection/executor APIs. These selected options may change what they observe: " +
+  return `This script uses reflection/executor APIs.${detected} These selected options may change what they observe: ` +
     `${labels.join(", ")}. The options remain enabled; test the output in your executor.${metadataNote}`;
 }
 
-export function compressAggressive(source: string, options: Partial<AggressiveOptions> = {}): CompressResult {
+function compressAggressiveCore(source: string, opts: AggressiveOptions): CompressResult {
   resetStringHoistCounter();
-  const opts: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
   let parsed;
   try {
     parsed = parse(source);
@@ -149,9 +149,6 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
   }
 
   const { chunk, protectedComments } = parsed;
-  const warnings: string[] = [];
-  const reflection = reflectionWarning(chunk, opts);
-  if (reflection) warnings.push(reflection);
   const resolved = transformForAggressive(chunk, opts);
   const renameMap = opts.rename ? computeRenameMap(resolved) : undefined;
   const printed = print(chunk, renameMap);
@@ -173,5 +170,43 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
 
   let output = printed;
   if (protectedComments.length) output = `${protectedComments.join("\n")}\n${output}`;
-  return warnings.length ? { ok: true, output, warning: warnings.join(" ") } : { ok: true, output };
+  return { ok: true, output };
+}
+
+const OPTION_KEYS = Object.keys(DEFAULT_AGGRESSIVE_OPTIONS) as (keyof AggressiveOptions)[];
+
+function byteLength(value: string) {
+  return new TextEncoder().encode(value).length;
+}
+
+export function compressAggressive(source: string, options: Partial<AggressiveOptions> = {}): CompressResult {
+  let active: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
+  let best = compressAggressiveCore(source, active);
+  if (!best.ok) return best;
+
+  const rolledBack: string[] = [];
+  for (const key of OPTION_KEYS) {
+    if (!active[key]) continue;
+    const candidateOptions = { ...active, [key]: false };
+    const candidate = compressAggressiveCore(source, candidateOptions);
+    if (candidate.ok && byteLength(candidate.output) < byteLength(best.output)) {
+      best = candidate;
+      active = candidateOptions;
+      rolledBack.push(OPTION_LABELS[key] ?? key);
+    }
+  }
+
+  let warning: string | undefined;
+  try {
+    warning = reflectionWarning(parse(source).chunk, active);
+  } catch {
+    return best;
+  }
+  return {
+    ok: true,
+    output: best.output,
+    warning,
+    rolledBack,
+    appliedOptions: active,
+  };
 }

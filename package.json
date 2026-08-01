@@ -9,7 +9,8 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "vitest run"
+    "test": "vitest run",
+    "benchmark": "vitest bench --run"
   },
   "dependencies": {
     "next": "16.2.6",

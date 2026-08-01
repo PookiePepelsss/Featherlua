@@ -91,15 +91,15 @@ describe("optimize: `not` folding on literals", () => {
 
 describe("optimize: comparison folding", () => {
   it("folds numeric ordering comparisons", () => {
-    expect(output("local x = 1 < 2")).toBe("local a=true");
+    expect(output("local x = 1 < 2")).toBe("local a=1<2");
     expect(output("local x = 2 <= 2")).toBe("local a=true");
-    expect(output("local x = 3 > 5")).toBe("local a=false");
+    expect(output("local x = 3 > 5")).toBe("local a=3>5");
     expect(output("local x = 5 >= 5")).toBe("local a=true");
   });
 
   it("folds equality between literals of the same type", () => {
     expect(output("local x = 1 == 1")).toBe("local a=true");
-    expect(output("local x = 1 == 2")).toBe("local a=false");
+    expect(output("local x = 1 == 2")).toBe("local a=1==2");
     expect(output("local x = 1 ~= 2")).toBe("local a=true");
     expect(output("local x = true == true")).toBe("local a=true");
     expect(output("local x = nil == nil")).toBe("local a=true");

@@ -65,16 +65,30 @@ function reflectedName(expr: Expr): { name?: string; debugMember: boolean } {
   return { debugMember: false };
 }
 
-export function detectReflectionRisks(chunk: Chunk): Set<ReflectionRisk> {
+export interface ReflectionUsage {
+  risks: Set<ReflectionRisk>;
+  apis: Set<string>;
+}
+
+export function detectReflectionUsage(chunk: Chunk): ReflectionUsage {
   const risks = new Set<ReflectionRisk>();
+  const apis = new Set<string>();
   someBlock(chunk.body, (expr) => {
     const { name, debugMember } = reflectedName(expr);
     if (!name) return false;
-    for (const risk of REFLECTION_APIS[name] ?? []) risks.add(risk);
+    const directRisks = REFLECTION_APIS[name] ?? [];
+    for (const risk of directRisks) risks.add(risk);
+    if (directRisks.length) apis.add(debugMember ? `debug.${name}` : name);
     if (debugMember) {
-      for (const risk of DEBUG_ONLY_APIS[name] ?? []) risks.add(risk);
+      const debugRisks = DEBUG_ONLY_APIS[name] ?? [];
+      for (const risk of debugRisks) risks.add(risk);
+      if (debugRisks.length) apis.add(`debug.${name}`);
     }
     return false;
   });
-  return risks;
+  return { risks, apis };
+}
+
+export function detectReflectionRisks(chunk: Chunk): Set<ReflectionRisk> {
+  return detectReflectionUsage(chunk).risks;
 }

@@ -19,10 +19,10 @@ describe("round-trip: alpha-equivalence after renaming", () => {
       // re-listing the transforms here by hand) is what keeps this test
       // from silently drifting out of sync the next time a transform is
       // added or reordered.
-      const original = transformForAggressive(parse(fixture.source).chunk);
       const result = compressAggressive(fixture.source);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
+      const original = transformForAggressive(parse(fixture.source).chunk, result.appliedOptions);
       const reparsed = resolveScopes(parse(result.output).chunk);
       const cmp = structurallyEqual(original.chunk, reparsed.chunk);
       expect(cmp.equal, cmp.reason).toBe(true);
