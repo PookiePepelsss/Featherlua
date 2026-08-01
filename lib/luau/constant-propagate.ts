@@ -2,24 +2,6 @@ import type { Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 import { stringLocalIsWorthKeeping } from "./hoist-repeated-strings";
 
-// Substitutes a local's value into its use sites when it's provably never
-// reassigned (scanning every assignment target in the program, not just
-// trusting a `<const>` attribute), then drops the now-dead declaration.
-// This is what makes optimize.ts's dead-branch elimination fire on real
-// code: `local DEBUG = false; if DEBUG then ... end` isn't foldable until
-// DEBUG's value lands in the condition.
-//
-// Only single-name `local x = <literal>` declarations qualify, and only
-// scalar literals (nil/true/false/number/string) -- never table
-// constructors, since cloning one to each use site would make separate
-// tables instead of sharing the original by reference. `<close>` locals
-// are never touched (their scope-exit triggers Luau's `__close`, a real
-// side effect). No cross-local chaining in one pass (`local a=1; local
-// b=a` doesn't propagate `a` into `b` directly) -- the caller loops this
-// with optimize() so chains converge over a few rounds instead.
-//
-// Returns whether anything was substituted, so the caller knows another
-// round might find more.
 export function propagateConstants(resolved: ResolvedProgram, willRename: boolean): boolean {
   const candidates = new Map<number, Expr>(); // symbolId -> literal to substitute
   const nameLengths = new Map<number, number>(); // symbolId -> original declared name's length
@@ -32,23 +14,8 @@ export function propagateConstants(resolved: ResolvedProgram, willRename: boolea
   for (const [id, literal] of candidates) {
     if (reassigned.has(id)) continue;
     const refCount = refCounts.get(id) ?? 0;
-    // A string referenced enough times that hoist-repeated-strings.ts
-    // would hoist it into its own local must never be inlined back out --
-    // otherwise the two passes fight every other compress: hoist pulls a
-    // repeated literal into a local, this pass immediately inlines it
-    // back out (a plain `local x = "..."` looks like any other candidate
-    // once printed and re-parsed), the *other* previously-inline string
-    // gets hoisted instead next round, and output oscillates between two
-    // states forever instead of settling. Same threshold, same call, so
-    // the two passes can never disagree about which strings stay local.
+    // Keep string hoisting and propagation from undoing each other.
     if (literal.type === "StringExpr" && stringLocalIsWorthKeeping(literal.raw, refCount)) continue;
-    // A nil/boolean/number literal that costs more to repeat at every use
-    // site than to keep as a local (e.g. `local GRAVITY = 9.81` read 5+
-    // times) shouldn't be inlined either -- unlike the string case,
-    // there's no separate hoisting pass to stay consistent with here,
-    // just a direct "would this make the output bigger" check using the
-    // real original name's length (or 1, optimistically assuming
-    // renaming shrinks it).
     const rawLength = literalRawLength(literal);
     if (rawLength !== undefined && !worthPropagatingLiteral(rawLength, refCount, nameLengths.get(id), willRename)) {
       continue;
@@ -57,11 +24,6 @@ export function propagateConstants(resolved: ResolvedProgram, willRename: boolea
   }
   if (eligible.size === 0) return false;
 
-  // Two passes on purpose: substitute first (recording which symbols were
-  // actually inlined), then drop declarations. Dropping anything merely
-  // "eligible" -- regardless of whether it was ever referenced -- would
-  // quietly turn this into unused-variable elimination, a separate concern
-  // handled by remove-unused-locals.ts.
   const hitSymbols = new Set<number>();
   resolved.chunk.body = substituteBlock(resolved.chunk.body, eligible, hitSymbols);
   if (hitSymbols.size === 0) return false;
@@ -70,10 +32,6 @@ export function propagateConstants(resolved: ResolvedProgram, willRename: boolea
   return true;
 }
 
-// Removes `local x = <literal>` declarations for symbols that were
-// actually inlined at every use site by the substitute pass above (so the
-// declaration is now provably dead: literal initializer, zero remaining
-// reads, never reassigned).
 function dropDeclarations(stats: Stat[], hitSymbols: Set<number>): Stat[] {
   const kept: Stat[] = [];
   for (const stat of stats) {

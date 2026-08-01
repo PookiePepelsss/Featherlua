@@ -2,24 +2,6 @@ import type { Chunk, Expr, Stat } from "./ast";
 import { parseLuauNumber } from "./optimize";
 import { isCallExpr, someBlock } from "./ast-search";
 
-// Opt-in, off by default: hoists a repeated `global.field.field...` read
-// out of a loop into a local computed once before it (caching
-// `game:GetService(...)`, deep field chains, etc.). The one pass in this
-// codebase that isn't provably safe from source alone -- it assumes the
-// accessed tables have no custom `__index` side effect.
-//
-// Kept as narrow as possible around that one assumption: only loops
-// provably running at least once (`RepeatStat`, or `NumericForStat` with
-// literal bounds); the chain's root name must never be declared as a
-// local or assigned to ANYWHERE in the program, so it unambiguously
-// denotes the same global; a loop containing any function call anywhere
-// in it is skipped entirely, since a call could mutate something
-// reachable from the chain (this is also what keeps a RemoteEvent call's
-// own arguments untouched -- the call disqualifies its whole loop before
-// the chain inside it is ever considered); only occurrences reached
-// unconditionally in the loop body count, never something behind an
-// `if` or nested loop; and chains are plain `Name.field.field...` only,
-// never a call or a computed `[...]` index.
 export function hoistRepeatedGlobalAccess(chunk: Chunk): boolean {
   const unsafeNames = collectUnsafeBaseNames(chunk);
   const changedRef = { value: false };
@@ -27,10 +9,6 @@ export function hoistRepeatedGlobalAccess(chunk: Chunk): boolean {
   return changedRef.value;
 }
 
-// === chain identity ===
-
-// A chain is `Identifier` followed by 1+ `.name` MemberExpr steps -- never
-// a computed index, never anything containing a call.
 function chainKey(expr: Expr): string | undefined {
   if (expr.type !== "MemberExpr") return undefined;
   const parts: string[] = [];
@@ -48,10 +26,6 @@ function chainBaseName(expr: Expr): string | undefined {
   while (cur.type === "MemberExpr") cur = cur.object;
   return cur.type === "Identifier" ? cur.name : undefined;
 }
-
-// === whole-program scan: names that can never be trusted as a stable global
-// (also used by alias-repeated-global-calls.ts, which needs the exact same
-// guarantee for the same reason) ===
 
 export function collectUnsafeBaseNames(chunk: Chunk): Set<string> {
   const names = new Set<string>();

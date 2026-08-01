@@ -92,7 +92,7 @@ describe("trust regressions: unused initializers", () => {
 });
 
 describe("trust regressions: reflection warnings do not change selected options", () => {
-  const executorReflectionNames = [
+  const layoutReflectionNames = [
     "getgc",
     "getreg",
     "getregistry",
@@ -109,23 +109,59 @@ describe("trust regressions: reflection warnings do not change selected options"
     "setstack",
     "getlocal",
     "setlocal",
-    "getscriptclosure",
-    "getscriptfunction",
-    "getscriptbytecode",
-    "dumpstring",
   ];
 
-  for (const name of executorReflectionNames) {
+  for (const name of layoutReflectionNames) {
     it(`warns without disabling compression when ${name} is referenced`, () => {
       const result = compressAggressive(`local capturedValue=1\n${name}(target)\nreturn capturedValue`);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.warning).toContain("reflection/executor APIs");
-      expect(result.warning).toContain("Rename locals");
       expect(result.warning).toContain("options remain enabled");
       expect(result.output).not.toContain("capturedValue");
     });
   }
+
+  it("warns separately for bytecode inspection", () => {
+    for (const name of ["getscriptbytecode", "dumpstring"]) {
+      const result = compressAggressive(`${name}(target)`);
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.warning).toContain("compiled bytecode");
+    }
+  });
+
+  it("does not flag executor APIs that do not inspect compiler layout", () => {
+    for (const name of ["getscriptclosure", "getscriptfunction"]) {
+      const result = compressAggressive(`${name}(target)`);
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.warning).toBeUndefined();
+    }
+  });
+
+  it("warns only about options relevant to constant inspection", () => {
+    const result = compressAggressive("debug.getconstants(target)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.warning).toContain("Fold constants");
+    expect(result.warning).not.toContain("Rename locals");
+    expect(result.warning).not.toContain("Merge adjacent assigns");
+  });
+
+  it("includes local renaming for upvalue inspection", () => {
+    const result = compressAggressive("debug.getupvalues(target)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.warning).toContain("Rename locals");
+  });
+
+  it("warns about debug metadata even when transforms are disabled", () => {
+    const result = compressAggressive("debug.info(target, 'n')", noPasses);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.warning).toContain("line information");
+  });
 
   it("warns but does not preserve layout automatically for debug.setupvalue", () => {
     const source =

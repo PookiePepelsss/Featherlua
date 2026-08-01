@@ -3,23 +3,6 @@ import type { ResolvedProgram } from "./scope-resolver";
 import { someExpr } from "./ast-search";
 import { isDefinitelyInert } from "./effect-analysis";
 
-// `local a=1 local b=2` -> `local a,b=1,2`, and chains further into a
-// three-or-more-way merge (`local a=1 local b=2 local c=3` -> a single
-// `local a,b,c=1,2,3`) since `prev` in mergeBlock below is the running,
-// already-merged accumulator -- each new candidate is checked against
-// its current (possibly already multi-name) shape, not just the original
-// pair. Requires both sides fully saturated (one init per name) or both
-// bare -- a partial/overflowing init list (`local a=f(),g()`) would shift
-// which value lands on which name once concatenated. Also refuses to
-// merge when `b`'s init reads any name already in `a`: in
-// `local a,b=1,a+1`, the right-hand `a` would resolve to whatever was in
-// scope BEFORE this statement (real Lua semantics), not the `a=1` just
-// declared -- exactly the trap that made this unsafe in the unmerged
-// code's original meaning. Later initializers must also be definitely inert,
-// and `<close>` locals are never merged because a later error must still
-// close an already-created value. Any miscategorization here still fails closed:
-// compress-aggressive.ts re-validates output against the source tree
-// before shipping it.
 export function mergeAdjacentLocals(resolved: ResolvedProgram): boolean {
   let changed = false;
   resolved.chunk.body = mergeBlock(resolved.chunk.body, () => {
@@ -28,24 +11,16 @@ export function mergeAdjacentLocals(resolved: ResolvedProgram): boolean {
   return changed;
 }
 
-// "bare" (no init at all) and "saturated" (exactly one init per name) are
-// the only two shapes safe to concatenate positionally; anything else
-// (extra discarded values, or fewer inits than names) is left alone.
 function saturationKind(stat: LocalStat): "bare" | "saturated" | "neither" {
   if (stat.init.length === 0) return "bare";
   return stat.init.length === stat.names.length ? "saturated" : "neither";
 }
 
 function canMerge(a: LocalStat, b: LocalStat): boolean {
-  // A multi-local declaration installs every local only after every RHS has
-  // completed. Merging across <close> can therefore skip required closing
-  // when a later initializer throws.
   if ([...a.names, ...b.names].some((name) => name.attrib === "close")) return false;
   const aKind = saturationKind(a);
   if (aKind === "neither" || aKind !== saturationKind(b)) return false;
   if (aKind === "bare") return true;
-  // Later initializers run before the earlier locals are installed in the
-  // merged form, so they must be unable to observe that delay.
   if (!b.init.every(isDefinitelyInert)) return false;
   const aIds = a.names.map((n) => n.symbolId);
   if (aIds.some((id) => id === undefined)) return false;

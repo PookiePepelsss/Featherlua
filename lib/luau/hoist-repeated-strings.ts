@@ -1,31 +1,13 @@
 import type { Chunk, Expr, Stat } from "./ast";
 
-// A string literal repeated 3+ times within one function's scope gets
-// hoisted into a `local` at the top of that scope, on by default: unlike
-// hoist-repeated-access.ts, this rests on no unverifiable assumption --
-// strings have no identity or metatable a script can intercept, so
-// referencing one via a local is behaviorally identical even as a call
-// argument (a RemoteEvent payload keeps the same value, just a different
-// source expression), and it's cheap to hoist even into a conditionally
-// reached branch. Scoped to one function at a time rather than across
-// closures, so a hoist and its uses always share the same block family.
 export function hoistRepeatedStrings(chunk: Chunk): boolean {
   const changedRef = { value: false };
   chunk.body = processScope(chunk.body, changedRef);
   return changedRef.value;
 }
 
-// A conservative stand-in for the eventual local name's length, used to
-// decide whether keeping a repeated string as a local is worth it at all.
-// Not the real generated name's length (that depends on stringHoistCounter,
-// which would make the answer depend on processing order) -- a fixed
-// estimate so the same (raw, count) pair always gets the same verdict.
-// constant-propagate.ts calls the same function for the same reason: it
-// must never propagate away a local this pass would have created, or the
-// two passes fight every other compress (see stringLocalIsWorthKeeping's
-// own comment for what that looked like in practice).
 const ASSUMED_NAME_LENGTH = 7;
-const DECL_OVERHEAD = 7; // `local ` + `=`
+const DECL_OVERHEAD = 7;
 
 export function stringLocalIsWorthKeeping(raw: string, count: number): boolean {
   if (count < 3) return false;
@@ -34,9 +16,6 @@ export function stringLocalIsWorthKeeping(raw: string, count: number): boolean {
   return newCost < originalCost;
 }
 
-// Reset per call (see compress-aggressive.ts); see hoist-repeated-access.ts's
-// resetHoistCounter for why letting this climb across separate compress()
-// calls would be an unforced inconsistency.
 let stringHoistCounter = 0;
 
 export function resetStringHoistCounter(): void {
@@ -67,9 +46,6 @@ function processScope(stats: Stat[], changedRef: { value: boolean }): Stat[] {
   }
   return [...newLocals, ...stats];
 }
-
-// === pass 1: count string literals reachable in this scope, stopping at
-// (but independently recursing into) nested function-body boundaries ===
 
 function countBlock(
   stats: Stat[],

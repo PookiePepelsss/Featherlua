@@ -3,35 +3,6 @@ import type { ResolvedProgram } from "./scope-resolver";
 import { isCallExpr, someExpr } from "./ast-search";
 import { isDefinitelyInert } from "./effect-analysis";
 
-// `a=1 b=2` -> `a,b=1,2`, and chains further into a three-or-more-way merge
-// the same way merge-adjacent-locals.ts does: `prev` in mergeBlock below
-// is the running, already-merged accumulator, so each new candidate is
-// checked against its current (possibly already multi-target) shape.
-// Only bare Identifier targets by default (never `t[k]=`, whose index
-// expression would need its own evaluation-order analysis). Every later RHS
-// must be definitely inert: calls, global reads, indexing, operators, and
-// other potentially throwing or observable expressions stay unmerged.
-// Two more guards: Lua evaluates
-// every value in a multi-assignment before any store happens, so
-// `a=1 b=a+1` (b reads a's NEW value) would silently become `a,b=1,a+1`
-// reading the OLD value -- refused whenever a later value reads an
-// earlier target's binding. And assigning the same binding twice in one
-// merged statement is explicitly undefined in Lua, so any duplicate
-// target across the whole merged group is refused too. Any
-// miscategorization still fails closed via compress-aggressive.ts's
-// output re-validation.
-//
-// `includeMemberTargets` (off by default, EXPERIMENTAL) additionally
-// allows `t.x=1 t.y=2` -> `t.x,t.y=1,2` for a plain-Identifier-based
-// field (`t.x`, never `t[k]` or `f().x`). This rests on an assumption the
-// self-validation backstop CANNOT catch, unlike every other pass here:
-// assigning to a table field can invoke a custom `__newindex`, and
-// merging changes the relative order two such handlers would fire in --
-// a real behavior difference invisible to a structural re-parse check,
-// which only confirms the output *parses* to an equivalent shape, not
-// that it *runs* the same. Table proxies/readonly wrappers using
-// `__newindex` are common enough in real Luau OOP code that this stays
-// opt-in.
 export function mergeAdjacentAssigns(resolved: ResolvedProgram, includeMemberTargets: boolean): boolean {
   let changed = false;
   resolved.chunk.body = mergeBlock(resolved.chunk.body, includeMemberTargets, () => {
@@ -45,8 +16,6 @@ function isMergeableTarget(target: Expr, includeMemberTargets: boolean): boolean
   return includeMemberTargets && target.type === "MemberExpr" && target.object.type === "Identifier";
 }
 
-// Saturated (one value per target, never an overflowing/discarding list)
-// and every target individually mergeable.
 function isMergeableStat(stat: AssignStat, includeMemberTargets: boolean): boolean {
   return (
     stat.targets.length === stat.values.length &&
@@ -54,11 +23,6 @@ function isMergeableStat(stat: AssignStat, includeMemberTargets: boolean): boole
   );
 }
 
-// A comparable identity for an assignment target or a read of the same
-// shape (`Identifier` or plain `base.field` `MemberExpr`) -- undefined
-// for anything else (globals with no symbolId still get a name-based key
-// so two different-scope locals that happen to share a name never
-// collide with a global of the same name).
 function targetIdentity(expr: Expr): string | undefined {
   if (expr.type === "Identifier") {
     if (expr.symbolId !== undefined) return `s${expr.symbolId}`;
@@ -71,10 +35,6 @@ function targetIdentity(expr: Expr): string | undefined {
   return undefined;
 }
 
-// True if any two targets in the combined group would denote the same
-// binding (refuse -- see the "duplicate target" note above) -- also
-// refuses (conservatively) if any target's identity can't be determined
-// at all, though isMergeableTarget should already rule that out.
 function hasDuplicateTarget(targets: Expr[]): boolean {
   const ids = targets.map(targetIdentity);
   if (ids.some((id) => id === undefined)) return true;
@@ -91,9 +51,6 @@ function canMerge(a: Stat, b: Stat, includeMemberTargets: boolean): a is AssignS
   if (a.type !== "AssignStat" || b.type !== "AssignStat") return false;
   if (!isMergeableStat(a, includeMemberTargets) || !isMergeableStat(b, includeMemberTargets)) return false;
   if (a.values.some((v) => someExpr(v, isCallExpr)) || b.values.some((v) => someExpr(v, isCallExpr))) return false;
-  // All values from the later statement are evaluated before any store in
-  // the merged form. Restrict them to expressions that cannot observe the
-  // delayed stores through calls, metamethods, errors, or environment reads.
   if (!b.values.every(isDefinitelyInert)) return false;
   if (hasDuplicateTarget([...a.targets, ...b.targets])) return false;
   return !b.values.some((v) => a.targets.some((t) => referencesTarget(v, t)));

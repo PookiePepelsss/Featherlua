@@ -1,13 +1,6 @@
 import type { Chunk, Expr, Stat } from "./ast";
 import { KEYWORDS } from "./tokens";
 
-// Folds literal expressions and removes dead branches/loops. Runs on the
-// raw parsed AST before scope resolution -- none of this needs symbol
-// info. Constant propagation (tracking that a variable always holds a
-// literal) lives separately in constant-propagate.ts. Never folds `%`,
-// `//`, or `^` (Lua's `%` is floor-mod, JS's is truncating and disagrees
-// on mixed signs; `^` isn't guaranteed bit-identical to Lua's libm `pow`).
-
 export function parseLuauNumber(raw: string): number | undefined {
   const clean = raw.replace(/_/g, "");
   const hex = /^0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]*))?(?:[pP]([+-]?[0-9]+))?$/.exec(clean);
@@ -28,10 +21,6 @@ export function parseLuauNumber(raw: string): number | undefined {
   return parseFloat(clean);
 }
 
-// JS's default number-to-string is the shortest decimal that round-trips
-// to the exact same IEEE-754 double, which is exactly what's needed here:
-// the printed literal must parse back to the identical bit pattern the
-// folded arithmetic produced, not just "a" correct-looking value.
 function formatLuauNumber(n: number): string {
   return String(n);
 }
@@ -41,12 +30,6 @@ function asNumberLiteral(expr: Expr): number | undefined {
   return parseLuauNumber(expr.raw);
 }
 
-// Re-renders a number literal in its shortest round-tripping form
-// (`1.500000` -> `1.5`, `1_000_000` -> `1000000`, `0xA` -> `10`), applied
-// to every literal, not just fold results. Only replaces when strictly
-// shorter, so this can never grow output; non-finite/unparseable values
-// are left untouched (no valid Luau syntax for `Infinity`/`NaN` to render
-// into, and the original text is already correct as-is either way).
 function canonicalizeNumber(raw: string): string {
   const value = parseLuauNumber(raw);
   if (value === undefined || !Number.isFinite(value) || Object.is(value, -0)) return raw;
@@ -56,10 +39,6 @@ function canonicalizeNumber(raw: string): string {
 
 const SIMPLE_STRING_INDEX_RE = /^(["'])([A-Za-z_][A-Za-z0-9_]*)\1$/;
 
-// `t["key"]` -> `t.key`: shorter, and semantically identical for a plain
-// string key with no escapes -- only matches raw text with no backslash
-// (never needs decoding) that's a bare identifier and not a reserved
-// keyword (`t["end"]` can't become `t.end`).
 function stringIndexToFieldName(raw: string): string | undefined {
   const match = SIMPLE_STRING_INDEX_RE.exec(raw);
   if (!match) return undefined;
@@ -89,19 +68,12 @@ function literalKind(expr: Expr): LiteralKind | undefined {
   }
 }
 
-// Only nil and false are falsy in Lua -- 0 and "" are truthy, unlike JS.
 function literalTruthiness(expr: Expr): boolean | undefined {
   if (expr.type === "NilExpr" || expr.type === "FalseExpr") return false;
   if (expr.type === "TrueExpr" || expr.type === "NumberExpr" || expr.type === "StringExpr") return true;
   return undefined;
 }
 
-// `==`/`~=` between literals of different fundamental Lua types are always
-// false/true respectively -- Lua never coerces across number/string/
-// boolean/nil for equality (no metatables involved for raw literals).
-// String==string is deliberately left unfolded: proving two escaped string
-// literals decode to different values isn't safe without a full escape
-// decoder (`"\65"` and `"A"` are different raw text but the same string).
 function foldEquality(left: Expr, right: Expr, isEq: boolean): Expr | undefined {
   const lk = literalKind(left);
   const rk = literalKind(right);
@@ -119,13 +91,9 @@ function foldEquality(left: Expr, right: Expr, isEq: boolean): Expr | undefined 
     return boolNode(isEq ? a === b : a !== b);
   }
   if (lk === "nil") return boolNode(isEq);
-  return undefined; // string==string
+  return undefined;
 }
 
-// `<`/`<=`/`>`/`>=` only fold between two numbers -- Lua allows ordering
-// comparisons between two numbers or two strings (byte-wise), never mixed
-// types (that's a runtime error, not a boolean, so must never be folded to
-// one), and string ordering has the same escape-decoding risk as equality.
 function foldNumericComparison(left: Expr, right: Expr, op: string): Expr | undefined {
   const a = asNumberLiteral(left);
   const b = asNumberLiteral(right);
@@ -134,12 +102,6 @@ function foldNumericComparison(left: Expr, right: Expr, op: string): Expr | unde
   return boolNode(result);
 }
 
-// Lua's `and`/`or` return one of their OPERANDS, never a synthesized
-// true/false: `a and b` is `a` if `a` is falsy, else `b`; `a or b` is `a`
-// if `a` is truthy, else `b`. Only the LEFT operand's truthiness needs to
-// be known (a literal); the right side is returned as-is, unevaluated and
-// unexamined, matching Lua's short-circuit evaluation exactly -- if `right`
-// has side effects, they only ever ran when Lua would have run them too.
 function foldLogical(left: Expr, right: Expr, op: "and" | "or"): Expr | undefined {
   const truthy = literalTruthiness(left);
   if (truthy === undefined) return undefined;
@@ -147,10 +109,7 @@ function foldLogical(left: Expr, right: Expr, op: "and" | "or"): Expr | undefine
   return truthy ? left : right;
 }
 
-// String literal `..` concatenation by splicing raw token text. Decimal
-// escapes shorter than three digits and a trailing `\z` can absorb text
-// across the old token boundary, so those ambiguous cases are rejected.
-// Fixed-width and ordinary escapes can be copied without decoding.
+// Decimal escapes and \z can absorb text across a token boundary.
 function trailingAbsorbingEscape(raw: string): { kind: "decimal"; digits: number } | { kind: "z" } | undefined {
   let index = 0;
   while (index < raw.length) {
@@ -199,14 +158,9 @@ function foldConcat(left: Expr, right: Expr): Expr | undefined {
   return { type: "StringExpr", raw: `${quote}${leftInner}${rightInner}${quote}` };
 }
 
-// Returns the AST node that printing-then-reparsing this value would
-// actually produce -- never a NumberExpr with a sign baked into `raw`
-// (the lexer can't scan a leading "-" as part of a number token, so that
-// would silently become a mismatched UnaryExpr on reparse and get
-// rejected by compress-aggressive's self-validation).
 function foldToNumberNode(value: number): Expr | undefined {
-  if (!Number.isFinite(value)) return undefined; // no literal syntax for inf/nan
-  if (Object.is(value, -0)) return undefined; // avoid losing the sign of zero
+  if (!Number.isFinite(value)) return undefined;
+  if (Object.is(value, -0)) return undefined;
   if (value < 0) {
     return { type: "UnaryExpr", operator: "-", operand: { type: "NumberExpr", raw: formatLuauNumber(-value) } };
   }

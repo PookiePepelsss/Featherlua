@@ -15,57 +15,23 @@ import { hoistRepeatedStrings, resetStringHoistCounter } from "./hoist-repeated-
 import { mergeAdjacentLocals } from "./merge-adjacent-locals";
 import { mergeAdjacentAssigns } from "./merge-adjacent-assigns";
 import { aliasRepeatedGlobalCalls, resetAliasCounter } from "./alias-repeated-global-calls";
-import { hasExoticEnvironmentSignal, hasLocalReflectionSignal } from "./exotic-environment-guard";
+import { detectReflectionRisks, hasExoticEnvironmentSignal, type ReflectionRisk } from "./exotic-environment-guard";
 
 export type CompressResult =
   | { ok: true; output: string; warning?: string }
   | { ok: false; error: { message: string; line: number; col: number } };
 
-// Independently toggleable; disabling one never makes another unsafe, only
-// less effective (e.g. no foldConstants means propagateConstants has
-// nothing to re-fold between rounds).
 export interface AggressiveOptions {
-  /** Rename locals to short, scope-reuse-aware names. */
   rename: boolean;
-  /** Fold literal arithmetic/logical/comparison/concat expressions and
-   * eliminate literal-true/false branches. */
   foldConstants: boolean;
-  /** Substitute never-reassigned locals' values into their use sites. */
   propagateConstants: boolean;
-  /** Remove locals (and local functions) referenced nowhere, when the
-   * initializer can't possibly have a side effect or throw. */
   removeUnusedLocals: boolean;
-  /** Merge adjacent single-name `local` declarations into one statement
-   * (`local a=1 local b=2` -> `local a,b=1,2`). */
   mergeAdjacentLocals: boolean;
-  /** Merge adjacent single-target plain-identifier assignments into one
-   * statement (`a=1 b=2` -> `a,b=1,2`). */
   mergeAdjacentAssigns: boolean;
-  /** Hoist a string literal repeated 3+ times in one function's scope
-   * into a single local. Unconditionally safe -- strings have no
-   * observable identity or metatable in Lua. */
   hoistRepeatedStrings: boolean;
-  /** Drop type annotations, generics, and `type`/`export type` aliases
-   * (zero runtime effect in Luau -- erased at compile time). */
   stripTypes: boolean;
-  /** EXPERIMENTAL, off by default: hoist a `global.field.field...` chain
-   * read multiple times in a loop into a local computed once before it.
-   * Unlike every other option here, this rests on an assumption that
-   * can't be verified from source -- that the accessed tables have no
-   * custom `__index` metamethod with a side effect. See
-   * hoist-repeated-access.ts for the full safety scoping. */
   hoistRepeatedAccess: boolean;
-  /** EXPERIMENTAL, off by default: alias a bare global function called 3+
-   * times in one scope (`print`, `warn`, ...) to a local. Rests on the
-   * same unverifiable assumption as hoistRepeatedAccess -- that reading
-   * the global has no side effect. See alias-repeated-global-calls.ts. */
   aliasRepeatedGlobalCalls: boolean;
-  /** EXPERIMENTAL, off by default: lets mergeAdjacentAssigns also merge
-   * plain `t.x=1 t.y=2` field targets, not just bare identifiers. Assigning
-   * to a table field can invoke a custom `__newindex`, and merging changes
-   * the relative order two such handlers fire in -- a behavior difference
-   * the self-validation re-parse check cannot catch, unlike every other
-   * pass here. See merge-adjacent-assigns.ts. */
   mergeAdjacentAssignsAcrossFields: boolean;
 }
 
@@ -87,25 +53,12 @@ function parseError(message: string, line = 0, col = 0): CompressResult {
   return { ok: false, error: { message, line, col } };
 }
 
-// Single source of truth for the AST transforms Aggressive mode applies
-// before printing -- exported so tests build their comparison baseline
-// from this instead of a hand-copied pipeline that can drift out of sync.
 export function transformForAggressive(chunk: Chunk, options: AggressiveOptions = DEFAULT_AGGRESSIVE_OPTIONS): ResolvedProgram {
-  // Both need no symbol info, so they run before resolution. Folding first,
-  // so hoisting sees an already-simplified tree (e.g. a dead branch that
-  // would have contained a disqualifying call is gone before hoisting
-  // looks for candidates).
   if (options.foldConstants) optimize(chunk);
   if (options.hoistRepeatedAccess) hoistRepeatedGlobalAccess(chunk);
   if (options.aliasRepeatedGlobalCalls) aliasRepeatedGlobalCalls(chunk, options.rename);
   if (options.hoistRepeatedStrings) hoistRepeatedStrings(chunk);
   const resolved = resolveScopes(chunk);
-  // Looped: propagation and unused-local removal feed each other (removing
-  // an unused `local b = a` can make `a` itself newly unused), and folding
-  // a propagated value can expose a new dead branch (`local DEBUG = false;
-  // if DEBUG then` only folds once DEBUG's value lands in the condition).
-  // Bounded as a guard against unforeseen non-termination; converges in a
-  // handful of rounds in practice.
   if (options.propagateConstants || options.removeUnusedLocals) {
     for (let i = 0; i < 20; i += 1) {
       let changed = false;
@@ -115,26 +68,99 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
       if (options.foldConstants) optimize(resolved.chunk);
     }
   }
-  // Runs once, after unused-local removal has settled -- a deletion can
-  // newly place two locals adjacent to each other.
   if (options.mergeAdjacentLocals) mergeAdjacentLocals(resolved);
   if (options.mergeAdjacentAssigns) mergeAdjacentAssigns(resolved, options.mergeAdjacentAssignsAcrossFields);
-  // Luau types are erased at compile time, so stripping them can't change
-  // behavior -- only removes info for static analysis on the output.
   if (options.stripTypes) stripTypeInfo(resolved.chunk);
   return resolved;
 }
 
-// Re-parses and structurally re-verifies the output before returning it,
-// refusing to ship anything that fails -- a zero-dependency backstop
-// against a printer/renamer bug (see regressions.test.ts for real ones it
-// would have caught).
+const OPTION_LABELS: Partial<Record<keyof AggressiveOptions, string>> = {
+  rename: "Rename locals",
+  foldConstants: "Fold constants",
+  propagateConstants: "Propagate constants",
+  removeUnusedLocals: "Remove unused locals",
+  mergeAdjacentLocals: "Merge adjacent locals",
+  mergeAdjacentAssigns: "Merge adjacent assigns",
+  hoistRepeatedStrings: "Dedupe repeated strings",
+  hoistRepeatedAccess: "Hoist repeated access",
+  aliasRepeatedGlobalCalls: "Alias repeated global calls",
+  mergeAdjacentAssignsAcrossFields: "Merge adjacent field assigns",
+};
+
+const RISK_OPTIONS: Record<Exclude<ReflectionRisk, "bytecode">, readonly (keyof AggressiveOptions)[]> = {
+  bindings: [
+    "rename",
+    "foldConstants",
+    "propagateConstants",
+    "removeUnusedLocals",
+    "mergeAdjacentLocals",
+    "hoistRepeatedStrings",
+    "hoistRepeatedAccess",
+    "aliasRepeatedGlobalCalls",
+  ],
+  constants: [
+    "foldConstants",
+    "propagateConstants",
+    "removeUnusedLocals",
+    "hoistRepeatedStrings",
+    "hoistRepeatedAccess",
+    "aliasRepeatedGlobalCalls",
+  ],
+  prototypes: ["foldConstants", "propagateConstants", "removeUnusedLocals"],
+  stack: [
+    "foldConstants",
+    "propagateConstants",
+    "removeUnusedLocals",
+    "mergeAdjacentLocals",
+    "mergeAdjacentAssigns",
+    "hoistRepeatedStrings",
+    "hoistRepeatedAccess",
+    "aliasRepeatedGlobalCalls",
+    "mergeAdjacentAssignsAcrossFields",
+  ],
+  metadata: [
+    "rename",
+    "foldConstants",
+    "propagateConstants",
+    "removeUnusedLocals",
+    "mergeAdjacentLocals",
+    "mergeAdjacentAssigns",
+    "hoistRepeatedStrings",
+    "hoistRepeatedAccess",
+    "aliasRepeatedGlobalCalls",
+    "mergeAdjacentAssignsAcrossFields",
+  ],
+  broad: Object.keys(OPTION_LABELS) as (keyof AggressiveOptions)[],
+};
+
+function reflectionWarning(chunk: Chunk, options: AggressiveOptions): string | undefined {
+  const risks = detectReflectionRisks(chunk);
+  if (!risks.size) return undefined;
+  if (risks.has("bytecode")) {
+    return "This script inspects compiled bytecode. Any minification can change bytecode or hashes; test the output in your executor.";
+  }
+
+  const relevant = new Set<keyof AggressiveOptions>();
+  for (const risk of risks) {
+    if (risk === "bytecode") continue;
+    for (const key of RISK_OPTIONS[risk]) relevant.add(key);
+  }
+  const labels = [...relevant]
+    .filter((key) => options[key])
+    .map((key) => OPTION_LABELS[key])
+    .filter((label): label is string => Boolean(label));
+  if (!labels.length) {
+    return risks.has("metadata")
+      ? "Output formatting can change function names or line information reported by debug APIs. Test the output in your executor."
+      : undefined;
+  }
+
+  const metadataNote = risks.has("metadata") ? " Output formatting may also change reported line information." : "";
+  return "This script uses reflection/executor APIs. These selected options may change what they observe: " +
+    `${labels.join(", ")}. The options remain enabled; test the output in your executor.${metadataNote}`;
+}
+
 export function compressAggressive(source: string, options: Partial<AggressiveOptions> = {}): CompressResult {
-  // Each synthetic-name counter is module-level (shared across sibling
-  // hoists/aliases within one call); reset here so a session compressing
-  // many scripts back-to-back doesn't leave them climbing indefinitely,
-  // which would make the byte-savings gates that read them progressively
-  // less accurate call after call for no reason.
   resetHoistCounter();
   resetStringHoistCounter();
   resetAliasCounter();
@@ -149,27 +175,8 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
 
   const { chunk, protectedComments } = parsed;
   const warnings: string[] = [];
-  if (hasLocalReflectionSignal(chunk)) {
-    const selectedReflectionSensitiveOptions = [
-      opts.rename && "Rename locals",
-      opts.foldConstants && "Fold constants",
-      opts.propagateConstants && "Propagate constants",
-      opts.removeUnusedLocals && "Remove unused locals",
-      opts.mergeAdjacentLocals && "Merge adjacent locals",
-      opts.mergeAdjacentAssigns && "Merge adjacent assigns",
-      opts.hoistRepeatedStrings && "Dedupe repeated strings",
-      opts.hoistRepeatedAccess && "Hoist repeated access",
-      opts.aliasRepeatedGlobalCalls && "Alias repeated global calls",
-      opts.mergeAdjacentAssignsAcrossFields && "Merge adjacent field assigns",
-    ].filter((label): label is string => Boolean(label));
-    if (selectedReflectionSensitiveOptions.length) {
-      warnings.push(
-        "This script references reflection/executor APIs that can observe locals, upvalues, constants, prototypes, or stack slots. " +
-          `These selected options may change what those APIs observe: ${selectedReflectionSensitiveOptions.join(", ")}. ` +
-          "The options remain enabled; test the output in your executor.",
-      );
-    }
-  }
+  const reflection = reflectionWarning(chunk, opts);
+  if (reflection) warnings.push(reflection);
   if ((opts.hoistRepeatedAccess || opts.aliasRepeatedGlobalCalls) && hasExoticEnvironmentSignal(chunk)) {
     warnings.push(
       "This script references an environment-manipulation API (_G, getfenv, hookmetamethod, ...). " +

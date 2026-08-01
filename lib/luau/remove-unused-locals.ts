@@ -2,21 +2,6 @@ import type { Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 import { isRemovableInitializer } from "./effect-analysis";
 
-// Removes `local` declarations (and unused `local function` definitions)
-// referenced nowhere, when the initializer can't possibly error or have a
-// side effect. Separate from constant-propagate.ts's dead-declaration
-// cleanup, which only drops what it actually inlined somewhere -- this
-// drops anything simply never used, propagatable or not.
-//
-// Removable initializers are deliberately narrower than merely looking
-// side-effect-free: literals, resolved local reads, function definitions,
-// and tables whose values and computed keys are themselves proven safe.
-// Global reads, indexing, operators, calls, and invalid computed keys can
-// invoke metamethods or throw, so they remain even when the local is unused.
-//
-// Only single-name, at-most-single-init locals qualify (`local x = f(),
-// g()` still calls g() for its side effect even though only f()'s result
-// is kept), matching the same conservative scope used elsewhere.
 export function removeUnusedLocals(resolved: ResolvedProgram): boolean {
   const refCounts = new Map<number, number>();
   countReferences(resolved.chunk.body, refCounts);
@@ -27,8 +12,6 @@ export function removeUnusedLocals(resolved: ResolvedProgram): boolean {
   });
   return changed;
 }
-
-// === pass 1: count every Identifier reference by symbolId, everywhere ===
 
 function countReferences(stats: Stat[], counts: Map<number, number>) {
   for (const stat of stats) countStat(stat, counts);

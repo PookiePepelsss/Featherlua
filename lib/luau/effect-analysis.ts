@@ -1,9 +1,6 @@
 import type { Expr } from "./ast";
 
-// Expressions in this set cannot call user code, invoke a metamethod,
-// throw, allocate an observable object, or read the global environment.
-// It is intentionally small: missing a merge costs a few bytes, while a
-// false positive can change execution order.
+// Keep this deliberately conservative; it gates evaluation-order changes.
 export function isDefinitelyInert(expr: Expr): boolean {
   switch (expr.type) {
     case "NilExpr":
@@ -30,10 +27,6 @@ function isDefinitelyValidTableKey(expr: Expr): boolean {
   );
 }
 
-// Used only when deleting an unreferenced initializer. Table constructors
-// are removable when every field expression is inert and every computed key
-// is a literal that cannot be nil/NaN. Unresolved globals are excluded because
-// an environment __index can run user code or throw on a read.
 export function isRemovableInitializer(expr: Expr): boolean {
   if (isDefinitelyInert(expr)) return true;
   if (expr.type === "FunctionExpr") return true;

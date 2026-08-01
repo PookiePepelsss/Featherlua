@@ -1,30 +1,6 @@
 import type { Chunk, Expr, Stat } from "./ast";
 import { collectUnsafeBaseNames } from "./hoist-repeated-access";
 
-// Opt-in, off by default: a bare global function called 3+ times in one
-// scope (`print(...)`, `warn(...)`, etc.) gets aliased to a local declared
-// at the top of that scope, with each call site's callee swapped to the
-// alias. Rests on the same unverifiable assumption as
-// hoist-repeated-access.ts -- that reading the global has no side effect
-// (a custom `__index` on the script's environment could intercept it) --
-// so it needs the same opt-in treatment even though the mechanics here are
-// simpler.
-//
-// Only bare-identifier callees qualify (`print`, never `game.Foo` or
-// `obj:Method`, which are MemberExpr/method-sugar, not a plain global
-// read) and only the global's use as a CALL target is touched -- a global
-// referenced some other way is left alone. The alias is always declared
-// as the first statement in its scope, so it's initialized before any
-// call site in that same scope can run; the global's name must also never
-// appear as a `local` declaration or assignment target anywhere in the
-// whole program (collectUnsafeBaseNames), so every remaining reference
-// unambiguously denotes the same stable global.
-// `willRename` matters a lot here, unlike hoist-repeated-strings.ts's gate:
-// global function names are inherently short (print, warn, error, wait --
-// almost never longer than ~8 chars), so whether the alias ends up a
-// single renamed letter or stays the literal `__fnN` text decides whether
-// aliasing is worth it at all. Threaded in from the caller, which already
-// knows the real `rename` option.
 export function aliasRepeatedGlobalCalls(chunk: Chunk, willRename: boolean): boolean {
   const unsafeNames = collectUnsafeBaseNames(chunk);
   const changedRef = { value: false };
@@ -32,22 +8,16 @@ export function aliasRepeatedGlobalCalls(chunk: Chunk, willRename: boolean): boo
   return changedRef.value;
 }
 
-const DECL_OVERHEAD = 7; // `local ` + `=`
+const DECL_OVERHEAD = 7;
 
 function worthAliasing(name: string, count: number, willRename: boolean): boolean {
   if (count < 3) return false;
-  // Renaming reliably gets a scope's first handful of locals down to one
-  // letter; without it, the alias keeps its literal (longer) synthetic
-  // name, so this has to use that real length instead.
   const assumedNameLength = willRename ? 1 : `__fn${aliasCounter + 1}`.length;
   const originalCost = count * name.length;
   const newCost = count * assumedNameLength + (DECL_OVERHEAD + assumedNameLength + name.length);
   return newCost < originalCost;
 }
 
-// Reset per call (see compress-aggressive.ts); see hoist-repeated-access.ts's
-// resetHoistCounter for why letting this climb across separate compress()
-// calls would be an unforced inconsistency.
 let aliasCounter = 0;
 
 export function resetAliasCounter(): void {
@@ -85,14 +55,6 @@ function processScope(
   return [...newLocals, ...stats];
 }
 
-// === pass 1: count bare-global-callee calls reachable in this scope,
-// stopping at (but independently recursing into) nested function bodies ===
-
-// Runs pre-resolution (before scope-resolver assigns isGlobal), same as
-// hoist-repeated-access.ts -- so "is this a global" is answered the same
-// way that pass answers it: a bare name never declared local or assigned
-// to anywhere in the whole program unambiguously denotes a global at
-// every occurrence, regardless of position.
 function isAliasCandidateCallee(expr: Expr, unsafeNames: Set<string>): string | undefined {
   if (expr.type !== "Identifier") return undefined;
   return unsafeNames.has(expr.name) ? undefined : expr.name;
