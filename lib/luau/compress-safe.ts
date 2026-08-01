@@ -141,10 +141,9 @@ function needsSpace(left: string, right: string) {
   return compoundSymbolSet.has(left + right);
 }
 
-export function compressSafe(source: string, dialect: LuaDialect = "luau") {
-  const outputParts: string[] = [];
+function scanSafe(source: string, dialect: LuaDialect) {
+  const tokens: string[] = [];
   const protectedComments: string[] = [];
-  let previousToken = "";
   let cursor = 0;
 
   if (source.startsWith("#!")) {
@@ -190,6 +189,16 @@ export function compressSafe(source: string, dialect: LuaDialect = "luau") {
     }
 
     const token = source.slice(start, cursor);
+    tokens.push(token);
+  }
+
+  return { tokens, protectedComments };
+}
+
+function renderSafe(tokens: string[], protectedComments: string[]) {
+  const outputParts: string[] = [];
+  let previousToken = "";
+  for (const token of tokens) {
     if (previousToken && needsSpace(previousToken, token)) outputParts.push(" ");
     outputParts.push(token);
     previousToken = token;
@@ -197,4 +206,35 @@ export function compressSafe(source: string, dialect: LuaDialect = "luau") {
 
   const body = outputParts.join("").trim();
   return protectedComments.length ? `${protectedComments.join("\n")}\n${body}`.trim() : body;
+}
+
+export function compressSafe(source: string, dialect: LuaDialect = "luau") {
+  const scanned = scanSafe(source, dialect);
+  return renderSafe(scanned.tokens, scanned.protectedComments);
+}
+
+export function verifySafeCompression(source: string, output: string, dialect: LuaDialect = "luau") {
+  const input = scanSafe(source, dialect);
+  const compressed = scanSafe(output, dialect);
+
+  if (input.protectedComments.length !== compressed.protectedComments.length) {
+    return { success: false as const, error: "a protected comment was changed or removed" };
+  }
+  for (let index = 0; index < input.protectedComments.length; index += 1) {
+    if (input.protectedComments[index] !== compressed.protectedComments[index]) {
+      return { success: false as const, error: "a protected comment was changed or removed" };
+    }
+  }
+  if (input.tokens.length !== compressed.tokens.length) {
+    return { success: false as const, error: "the output token count differs from the input" };
+  }
+  for (let index = 0; index < input.tokens.length; index += 1) {
+    if (input.tokens[index] !== compressed.tokens[index]) {
+      return { success: false as const, error: `token ${index + 1} differs from the input` };
+    }
+  }
+  if (compressSafe(output, dialect) !== output) {
+    return { success: false as const, error: "the output is not stable after recompression" };
+  }
+  return { success: true as const };
 }

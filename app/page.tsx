@@ -11,7 +11,6 @@ interface Stats {
   outputChars: number;
   outputBytes: number;
   durationMs: number;
-  validation: "official-luau" | "lexical";
 }
 
 const optionLabels: Array<[keyof AggressiveOptions, string]> = [
@@ -199,7 +198,6 @@ export default function Home() {
         outputChars: result.output.length,
         outputBytes: bytes(result.output),
         durationMs: result.durationMs,
-        validation: result.validation,
       });
     };
     worker.onerror = (event) => {
@@ -283,9 +281,6 @@ export default function Home() {
             </span>
           )}
           <span>{stats.durationMs.toFixed(1)} ms</span>
-          <span className={stats.validation === "official-luau" ? "validated" : undefined}>
-            {stats.validation === "official-luau" ? "Official Luau validated" : "Lexically validated"}
-          </span>
         </div>
       )}
 

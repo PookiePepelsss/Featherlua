@@ -2,7 +2,8 @@
 
 import { compressAggressive } from "./compress-aggressive";
 import type { CompressionRequest, CompressionResponse } from "./compression-protocol";
-import { compressSafe } from "./compress-safe";
+import { compressSafe, verifySafeCompression } from "./compress-safe";
+import { dialectLabel } from "./dialects";
 import {
   compileWithOfficialLuau,
   createOfficialLuau,
@@ -39,9 +40,18 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
     const result = aggressive
       ? compressAggressive(request.source, request.options)
       : { ok: true as const, output: compressSafe(request.source, request.dialect) };
+    const safeCheck = result.ok && !aggressive
+      ? verifySafeCompression(request.source, result.output, request.dialect)
+      : { success: true as const };
 
     if (!result.ok) {
       response = { id: request.id, ok: false, error: result.error.message };
+    } else if (!safeCheck.success) {
+      response = {
+        id: request.id,
+        ok: false,
+        error: `${dialectLabel(request.dialect)} token-preservation check failed: ${safeCheck.error}.`,
+      };
     } else if (request.dialect === "luau") {
       const module = await getOfficialModule();
       const inputValidation = compileWithOfficialLuau(module, request.source);
@@ -66,7 +76,7 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
         id: request.id,
         ok: true,
         output: result.output,
-        warning: `${request.dialect === "luajit" ? "LuaJIT" : "Lua"} mode uses lossless lexical compression; validate the result in the target runtime.`,
+        warning: `${dialectLabel(request.dialect)} uses lossless lexical compression with token-preservation checks; test the result in the target runtime.`,
         durationMs: performance.now() - started,
         validation: "lexical",
         rolledBack: [],

@@ -194,8 +194,6 @@ textarea[aria-invalid="true"] { color: #ff9b9b; }
   animation: popIn 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.validated { color: var(--accent); }
-
 .warning {
   border: 1px solid #7a5b12;
   border-radius: 9px;
@@ -323,8 +321,9 @@ button.dialectTrigger {
 }
 
 button.dialectTrigger:hover:not(:disabled) {
-  border-color: rgb(255 255 255 / 14%);
-  background: rgb(20 23 18 / 44%);
+  border-color: rgb(255 255 255 / 23%);
+  background: rgb(24 28 21 / 54%);
+  box-shadow: inset 0 1px rgb(255 255 255 / 15%), inset 0 -1px rgb(0 0 0 / 20%), 0 10px 30px rgb(0 0 0 / 22%);
 }
 
 .dialectTrigger.dialectOpen {
@@ -334,8 +333,8 @@ button.dialectTrigger:hover:not(:disabled) {
 }
 
 button.dialectTrigger.dialectOpen:hover:not(:disabled) {
-  border-color: rgb(213 255 87 / 38%);
-  background: rgb(25 29 22 / 56%);
+  border-color: rgb(213 255 87 / 50%);
+  background: rgb(29 34 25 / 64%);
 }
 
 .dialectChevron {
@@ -400,7 +399,7 @@ button.dialectOption {
   text-align: left;
   opacity: 0;
   transform: translateY(3px);
-  transition: opacity 140ms ease, transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: background 180ms ease, color 180ms ease, opacity 140ms ease, transform 160ms ease;
 }
 
 .menuOpen .dialectOption {
@@ -446,7 +445,6 @@ button.dialectOption.optionHighlighted {
   border: none;
   border-radius: 4px;
   background: transparent;
-  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .modeToggle button.modeActive {
@@ -466,17 +464,12 @@ button {
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
-  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: background 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
 button:hover:not(:disabled) { background: #20231d; border-color: #3b4034; transform: none; }
-button:active:not(:disabled) { transform: scale(0.97); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button:disabled { cursor: not-allowed; opacity: 0.45; }
-
-.menuOpen button.dialectOption:active {
-  transform: scale(0.97);
-}
 
 button.primary {
   border-color: var(--accent);
