@@ -232,29 +232,42 @@ export default function Home() {
   return (
     <main className="app">
       <section className="editors" aria-label="Lua compressor">
-        <label className="srOnly" htmlFor="source">Input</label>
-        <textarea
-          id="source"
-          value={source}
-          onChange={(event) => {
-            setSource(event.target.value);
-            invalidateResult();
-          }}
-          spellCheck={false}
-          placeholder="Input"
-          autoFocus
-        />
+        <div className="editorPanel">
+          <div className="editorHeader">
+            <label htmlFor="source">Input</label>
+            <span>{source ? `${bytes(source).toLocaleString()} B` : ""}</span>
+          </div>
+          <textarea
+            id="source"
+            value={source}
+            onChange={(event) => {
+              setSource(event.target.value);
+              invalidateResult();
+            }}
+            spellCheck={false}
+            placeholder="Paste code here"
+            autoFocus
+          />
+        </div>
 
-        <label className="srOnly" htmlFor="output">Output</label>
-        <textarea
-          id="output"
-          value={error ?? output}
-          readOnly
-          spellCheck={false}
-          placeholder={working ? "Compressing and validating…" : "Output"}
-          aria-invalid={error ? true : undefined}
-          aria-busy={working}
-        />
+        <div className={working ? "editorPanel outputPanel panelWorking" : "editorPanel outputPanel"}>
+          <div className="editorHeader">
+            <label htmlFor="output">Output</label>
+            <span className={error ? "panelState panelError" : output ? "panelState panelReady" : "panelState"}>
+              {working ? "Validating" : error ? "Error" : output ? "Ready" : ""}
+            </span>
+          </div>
+          <textarea
+            id="output"
+            className={error ? "outputArea outputError" : output ? "outputArea outputReady" : "outputArea"}
+            value={error ?? output}
+            readOnly
+            spellCheck={false}
+            placeholder={working ? "Compressing and validating…" : "Compressed code appears here"}
+            aria-invalid={error ? true : undefined}
+            aria-busy={working}
+          />
+        </div>
       </section>
 
       {stats && (

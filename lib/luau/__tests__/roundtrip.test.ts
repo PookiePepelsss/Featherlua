@@ -56,6 +56,22 @@ describe("round-trip: renaming actually happens (alpha-equivalence alone can't p
     expect(computeRenameMap(resolved).size).toBeGreaterThan(0);
   });
 
+  it("gives shorter names to frequently referenced locals", () => {
+    const declarations = Array.from({ length: 27 }, (_, index) => `local value${index}=${index}`).join("\n");
+    const { chunk } = parse(`${declarations}\nreturn ${Array(12).fill("value26").join(",")}`);
+    const resolved = resolveScopes(chunk);
+    const last = resolved.rootScope.declaredOrder[26];
+    expect(computeRenameMap(resolved).get(last)).toBe("a");
+  });
+
+  it("uses all one-letter identifiers before two-letter names", () => {
+    const declarations = Array.from({ length: 53 }, (_, index) => `local value${index}=${index}`).join("\n");
+    const resolved = resolveScopes(parse(declarations).chunk);
+    const names = [...computeRenameMap(resolved).values()];
+    expect(names.slice(0, 52).every((name) => name.length === 1)).toBe(true);
+    expect(names[52]).toBe("aa");
+  });
+
   it("globals, member names, method names, and string contents are never renamed", () => {
     const source = 'local greeting = "myVeryLongVariableName"\nprint(greeting)\nmyVeryLongVariableName.field = 1\nobj:myVeryLongVariableName()';
     const result = compressAggressive(source);

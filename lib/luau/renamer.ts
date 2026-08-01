@@ -9,17 +9,30 @@ import type { ResolvedProgram, Scope } from "./scope-resolver";
 const SOFT_KEYWORDS = new Set(["continue", "type", "export"]);
 
 function shortName(n: number): string {
-  let s = "";
-  let i = n;
-  do {
-    s = String.fromCharCode(97 + (i % 26)) + s;
-    i = Math.floor(i / 26) - 1;
-  } while (i >= 0);
-  return s;
+  const head = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const tail = `${head}0123456789`;
+  let width = 1;
+  let block = head.length;
+  while (n >= block) {
+    n -= block;
+    width += 1;
+    block *= tail.length;
+  }
+
+  const divisor = tail.length ** (width - 1);
+  let name = head[Math.floor(n / divisor)];
+  let remainder = n % divisor;
+  for (let position = width - 2; position >= 0; position -= 1) {
+    const place = tail.length ** position;
+    name += tail[Math.floor(remainder / place)];
+    remainder %= place;
+  }
+  return name;
 }
 
-function collectGlobalNames(chunk: Chunk): Set<string> {
-  const names = new Set<string>();
+function collectRenameStats(chunk: Chunk) {
+  const globals = new Set<string>();
+  const references = new Map<number, number>();
 
   const visitBlock = (stats: Stat[]) => stats.forEach(visitStat);
 
@@ -36,7 +49,10 @@ function collectGlobalNames(chunk: Chunk): Set<string> {
         for (const part of expr.parts) if (typeof part !== "string") visitExpr(part);
         return;
       case "Identifier":
-        if (expr.isGlobal) names.add(expr.name);
+        if (expr.isGlobal) globals.add(expr.name);
+        else if (expr.symbolId !== undefined) {
+          references.set(expr.symbolId, (references.get(expr.symbolId) ?? 0) + 1);
+        }
         return;
       case "IndexExpr":
         visitExpr(expr.object);
@@ -151,7 +167,7 @@ function collectGlobalNames(chunk: Chunk): Set<string> {
   }
 
   visitBlock(chunk.body);
-  return names;
+  return { globals, references };
 }
 
 // Scope-aware name reuse: two symbols can safely share a generated name if
@@ -171,7 +187,8 @@ function collectGlobalNames(chunk: Chunk): Set<string> {
 // (re-parse + alpha-equivalence check) is a backstop against any mistake
 // here, same as it would be for the simpler scheme.
 export function computeRenameMap(resolved: ResolvedProgram): Map<number, string> {
-  const taken = new Set<string>([...KEYWORDS, ...SOFT_KEYWORDS, ...collectGlobalNames(resolved.chunk)]);
+  const { globals, references } = collectRenameStats(resolved.chunk);
+  const taken = new Set<string>([...KEYWORDS, ...SOFT_KEYWORDS, ...globals]);
   const renameMap = new Map<number, string>();
 
   function nextFreeIndex(startIndex: number): { name: string; afterIndex: number } {
@@ -186,13 +203,12 @@ export function computeRenameMap(resolved: ResolvedProgram): Map<number, string>
 
   function visit(scope: Scope, baseIndex: number) {
     let index = baseIndex;
-    for (const symbolId of scope.declaredOrder) {
-      const symbol = resolved.symbols.get(symbolId)!;
-      // Luau's `:` method-call sugar always binds the literal name `self`
-      // -- there's no way to call it anything else while still using
-      // colon-call syntax, so it must never be renamed (and must not
-      // consume an index, since it never occupies a printed name slot).
-      if (symbol.kind === "self") continue;
+    const symbols = scope.declaredOrder
+      .map((symbolId, order) => ({ symbolId, order, symbol: resolved.symbols.get(symbolId)! }))
+      .filter((entry) => entry.symbol.kind !== "self")
+      .sort((a, b) => (references.get(b.symbolId) ?? 0) - (references.get(a.symbolId) ?? 0) || a.order - b.order);
+
+    for (const { symbolId } of symbols) {
       const { name, afterIndex } = nextFreeIndex(index);
       renameMap.set(symbolId, name);
       index = afterIndex;
