@@ -2,17 +2,22 @@ import type { AssignStat, Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 import { isCallExpr, someExpr } from "./ast-search";
 
-// `a=1 b=2` -> `a,b=1,2`. Only bare Identifier targets by default (never
-// `t[k]=`, whose index expression would need its own evaluation-order
-// analysis), and neither value may contain a call -- a call's side effect
-// could legitimately depend on running between the two original stores.
-// Two more guards: Lua evaluates every value in a multi-assignment before
-// any store happens, so `a=1 b=a+1` (b reads a's NEW value) would silently
-// become `a,b=1,a+1` reading the OLD value -- refused whenever the second
-// value reads the first target's binding. And `a=1 a=2` assigning the
-// same binding twice in one merged statement is explicitly undefined in
-// Lua, so same-binding targets are refused too. Any miscategorization
-// still fails closed via compress-aggressive.ts's output re-validation.
+// `a=1 b=2` -> `a,b=1,2`, and chains further into a three-or-more-way merge
+// the same way merge-adjacent-locals.ts does: `prev` in mergeBlock below
+// is the running, already-merged accumulator, so each new candidate is
+// checked against its current (possibly already multi-target) shape.
+// Only bare Identifier targets by default (never `t[k]=`, whose index
+// expression would need its own evaluation-order analysis), and no value
+// may contain a call -- a call's side effect could legitimately depend on
+// running between the two original stores. Two more guards: Lua evaluates
+// every value in a multi-assignment before any store happens, so
+// `a=1 b=a+1` (b reads a's NEW value) would silently become `a,b=1,a+1`
+// reading the OLD value -- refused whenever a later value reads an
+// earlier target's binding. And assigning the same binding twice in one
+// merged statement is explicitly undefined in Lua, so any duplicate
+// target across the whole merged group is refused too. Any
+// miscategorization still fails closed via compress-aggressive.ts's
+// output re-validation.
 //
 // `includeMemberTargets` (off by default, EXPERIMENTAL) additionally
 // allows `t.x=1 t.y=2` -> `t.x,t.y=1,2` for a plain-Identifier-based
@@ -33,11 +38,18 @@ export function mergeAdjacentAssigns(resolved: ResolvedProgram, includeMemberTar
   return changed;
 }
 
-function isMergeableTarget(stat: AssignStat, includeMemberTargets: boolean): boolean {
-  if (stat.targets.length !== 1) return false;
-  const target = stat.targets[0];
+function isMergeableTarget(target: Expr, includeMemberTargets: boolean): boolean {
   if (target.type === "Identifier") return true;
   return includeMemberTargets && target.type === "MemberExpr" && target.object.type === "Identifier";
+}
+
+// Saturated (one value per target, never an overflowing/discarding list)
+// and every target individually mergeable.
+function isMergeableStat(stat: AssignStat, includeMemberTargets: boolean): boolean {
+  return (
+    stat.targets.length === stat.values.length &&
+    stat.targets.every((t) => isMergeableTarget(t, includeMemberTargets))
+  );
 }
 
 // A comparable identity for an assignment target or a read of the same
@@ -57,10 +69,14 @@ function targetIdentity(expr: Expr): string | undefined {
   return undefined;
 }
 
-function sameBinding(a: AssignStat, b: AssignStat): boolean {
-  const ia = targetIdentity(a.targets[0]);
-  const ib = targetIdentity(b.targets[0]);
-  return ia !== undefined && ia === ib;
+// True if any two targets in the combined group would denote the same
+// binding (refuse -- see the "duplicate target" note above) -- also
+// refuses (conservatively) if any target's identity can't be determined
+// at all, though isMergeableTarget should already rule that out.
+function hasDuplicateTarget(targets: Expr[]): boolean {
+  const ids = targets.map(targetIdentity);
+  if (ids.some((id) => id === undefined)) return true;
+  return new Set(ids).size !== ids.length;
 }
 
 function referencesTarget(expr: Expr, target: Expr): boolean {
@@ -71,11 +87,10 @@ function referencesTarget(expr: Expr, target: Expr): boolean {
 
 function canMerge(a: Stat, b: Stat, includeMemberTargets: boolean): a is AssignStat {
   if (a.type !== "AssignStat" || b.type !== "AssignStat") return false;
-  if (!isMergeableTarget(a, includeMemberTargets) || !isMergeableTarget(b, includeMemberTargets)) return false;
-  if (a.values.length !== 1 || b.values.length !== 1) return false;
-  if (someExpr(a.values[0], isCallExpr) || someExpr(b.values[0], isCallExpr)) return false;
-  if (sameBinding(a, b)) return false;
-  return !referencesTarget(b.values[0], a.targets[0]);
+  if (!isMergeableStat(a, includeMemberTargets) || !isMergeableStat(b, includeMemberTargets)) return false;
+  if (a.values.some((v) => someExpr(v, isCallExpr)) || b.values.some((v) => someExpr(v, isCallExpr))) return false;
+  if (hasDuplicateTarget([...a.targets, ...b.targets])) return false;
+  return !b.values.some((v) => a.targets.some((t) => referencesTarget(v, t)));
 }
 
 function mergeBlock(stats: Stat[], includeMemberTargets: boolean, onChange: () => void): Stat[] {

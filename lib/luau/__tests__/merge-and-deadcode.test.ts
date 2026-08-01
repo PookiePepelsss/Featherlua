@@ -25,6 +25,22 @@ describe("scratch: merge-adjacent-locals", () => {
     const o = out("a = 5\nlocal a = 1\nlocal b = a\nprint(a,b)", noFold);
     expect(o).toContain("local a=1 local b=a");
   });
+
+  it("chains a run of 3+ into a single statement, not just the first pair", () => {
+    const o = out("local a = 1\nlocal b = 2\nlocal c = 3\nprint(a,b,c)", noFold);
+    expect(o).toBe("local a,b,c=1,2,3 print(a,b,c)");
+  });
+
+  it("chains bare declarations of any length", () => {
+    const o = out("local a\nlocal b\nlocal c\nlocal d\nprint(a,b,c,d)", noFold);
+    expect(o).toBe("local a,b,c,d print(a,b,c,d)");
+  });
+
+  it("stops the chain exactly where a later init references an earlier name, then resumes cleanly", () => {
+    const o = out("local a=1\nlocal b=2\nlocal c=a+b\nlocal d=4\nprint(a,b,c,d)", noFold);
+    // a,b merge; c can't join (reads a and b); c,d then merge on their own.
+    expect(o).toBe("local a,b=1,2 local c,d=a+b,4 print(a,b,c,d)");
+  });
 });
 
 describe("scratch: dead code after terminator", () => {

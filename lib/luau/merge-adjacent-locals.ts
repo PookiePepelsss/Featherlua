@@ -2,16 +2,21 @@ import type { Expr, LocalStat, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 import { someExpr } from "./ast-search";
 
-// `local a=1 local b=2` -> `local a,b=1,2`. Requires both sides fully
-// saturated (one init per name) or both bare -- a partial/overflowing init
-// list (`local a=f(),g()`) would shift which value lands on which name
-// once concatenated. Also refuses to merge when `b`'s init reads `a`'s
-// symbol: in `local a,b=1,a+1`, the right-hand `a` would resolve to
-// whatever was in scope BEFORE this statement (real Lua semantics), not
-// the `a=1` just declared -- exactly the trap that made this unsafe in the
-// unmerged code's original meaning. Any miscategorization here still fails
-// closed: compress-aggressive.ts re-validates output against the source
-// tree before shipping it.
+// `local a=1 local b=2` -> `local a,b=1,2`, and chains further into a
+// three-or-more-way merge (`local a=1 local b=2 local c=3` -> a single
+// `local a,b,c=1,2,3`) since `prev` in mergeBlock below is the running,
+// already-merged accumulator -- each new candidate is checked against
+// its current (possibly already multi-name) shape, not just the original
+// pair. Requires both sides fully saturated (one init per name) or both
+// bare -- a partial/overflowing init list (`local a=f(),g()`) would shift
+// which value lands on which name once concatenated. Also refuses to
+// merge when `b`'s init reads any name already in `a`: in
+// `local a,b=1,a+1`, the right-hand `a` would resolve to whatever was in
+// scope BEFORE this statement (real Lua semantics), not the `a=1` just
+// declared -- exactly the trap that made this unsafe in the unmerged
+// code's original meaning. Any miscategorization here still fails closed:
+// compress-aggressive.ts re-validates output against the source tree
+// before shipping it.
 export function mergeAdjacentLocals(resolved: ResolvedProgram): boolean {
   let changed = false;
   resolved.chunk.body = mergeBlock(resolved.chunk.body, () => {
@@ -20,13 +25,21 @@ export function mergeAdjacentLocals(resolved: ResolvedProgram): boolean {
   return changed;
 }
 
+// "bare" (no init at all) and "saturated" (exactly one init per name) are
+// the only two shapes safe to concatenate positionally; anything else
+// (extra discarded values, or fewer inits than names) is left alone.
+function saturationKind(stat: LocalStat): "bare" | "saturated" | "neither" {
+  if (stat.init.length === 0) return "bare";
+  return stat.init.length === stat.names.length ? "saturated" : "neither";
+}
+
 function canMerge(a: LocalStat, b: LocalStat): boolean {
-  if (a.names.length !== 1 || b.names.length !== 1) return false;
-  if (a.init.length === 0 && b.init.length === 0) return true;
-  if (a.init.length !== 1 || b.init.length !== 1) return false;
-  const id = a.names[0].symbolId;
-  if (id === undefined) return false;
-  return !someExpr(b.init[0], (e) => e.type === "Identifier" && e.symbolId === id);
+  const aKind = saturationKind(a);
+  if (aKind === "neither" || aKind !== saturationKind(b)) return false;
+  if (aKind === "bare") return true;
+  const aIds = a.names.map((n) => n.symbolId);
+  if (aIds.some((id) => id === undefined)) return false;
+  return !b.init.some((init) => someExpr(init, (e) => e.type === "Identifier" && aIds.includes(e.symbolId)));
 }
 
 function mergeBlock(stats: Stat[], onChange: () => void): Stat[] {

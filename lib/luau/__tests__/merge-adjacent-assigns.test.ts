@@ -57,6 +57,23 @@ describe("merge-adjacent-assigns", () => {
     const o = out("a = 1\nb = 2\nprint(a,b)", { ...noFold, mergeAdjacentAssigns: false });
     expect(o).toContain("a=1 b=2");
   });
+
+  it("chains a run of 3+ into a single statement, not just the first pair", () => {
+    const o = out("a = 1\nb = 2\nc = 3\nprint(a,b,c)", noFold);
+    expect(o).toBe("a,b,c=1,2,3 print(a,b,c)");
+  });
+
+  it("stops the chain exactly where a later value references an earlier target, then resumes cleanly", () => {
+    const o = out("a=1\nb=2\nc=a+b\nd=4\nprint(a,b,c,d)", noFold);
+    expect(o).toBe("a,b=1,2 c,d=a+b,4 print(a,b,c,d)");
+  });
+
+  it("stops the chain at a duplicate target across the whole group, not just the immediate pair", () => {
+    const o = out("a=1\nb=2\na=3\nprint(a,b)", noFold);
+    // a,b would merge, but the third statement reassigns a again -- must
+    // not silently become a,b,a=1,2,3 (undefined which store of `a` wins).
+    expect(o).toBe("a,b=1,2 a=3 print(a,b)");
+  });
 });
 
 describe("merge-adjacent-assigns: mergeAdjacentAssignsAcrossFields (EXPERIMENTAL, off by default)", () => {
@@ -65,6 +82,11 @@ describe("merge-adjacent-assigns: mergeAdjacentAssignsAcrossFields (EXPERIMENTAL
   it("off by default: field targets stay separate even with mergeAdjacentAssigns on", () => {
     const o = out("t.x = 1\nt.y = 2\nprint(t)", noFold);
     expect(o).toContain("t.x=1 t.y=2");
+  });
+
+  it("chains a run of 3+ field targets into a single statement", () => {
+    const o = out("t.x = 1\nt.y = 2\nt.z = 3\nprint(t)", withFields);
+    expect(o).toBe("t.x,t.y,t.z=1,2,3 print(t)");
   });
 
   it("merges plain t.x/t.y field targets when enabled", () => {
