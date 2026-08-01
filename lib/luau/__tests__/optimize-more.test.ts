@@ -227,6 +227,11 @@ describe("optimize: string-index-to-field (`t[\"key\"]` -> `t.key`)", () => {
     if (!result.ok) return;
     expect(result.output).toContain("t.x");
   });
+
+  it("uses named fields for safe string keys in table constructors", () => {
+    expect(outputIsolated('local t = {["name"] = 1, ["end"] = 2}\nprint(t)'))
+      .toBe('local t={name=1,["end"]=2}print(t)');
+  });
 });
 
 describe("optimize: remove-nil-declaration (`local x = nil` -> `local x`)", () => {

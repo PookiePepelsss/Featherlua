@@ -284,6 +284,21 @@ export class Printer {
     this.printExpr(target, 0);
   }
 
+  private printCallArgs(args: Expr[]) {
+    const only = args.length === 1 ? args[0] : undefined;
+    if (only && (
+      only.type === "StringExpr" ||
+      only.type === "InterpolatedStringExpr" ||
+      only.type === "TableExpr"
+    )) {
+      this.printExpr(only, 0);
+      return;
+    }
+    this.emit("(");
+    this.emitList(args, (arg) => this.printExpr(arg, 0));
+    this.emit(")");
+  }
+
   // Base of a suffix chain (`object`/`callee`). Only a `prefixexp` (Name |
   // '(' exp ')' | prefixexp suffix) can be indexed/called there -- unlike
   // printExpr's general ParenExpr handling, never drop these parens even
@@ -370,17 +385,13 @@ export class Printer {
         break;
       case "CallExpr":
         this.printPrefixExprBase(expr.callee);
-        this.emit("(");
-        this.emitList(expr.args, (a) => this.printExpr(a, 0));
-        this.emit(")");
+        this.printCallArgs(expr.args);
         break;
       case "MethodCallExpr":
         this.printPrefixExprBase(expr.object);
         this.emit(":");
         this.emit(expr.method);
-        this.emit("(");
-        this.emitList(expr.args, (a) => this.printExpr(a, 0));
-        this.emit(")");
+        this.printCallArgs(expr.args);
         break;
       case "FunctionExpr":
         this.emit("function");

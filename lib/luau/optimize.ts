@@ -208,10 +208,16 @@ function foldExpr(expr: Expr): Expr {
       expr.body = optimizeBlock(expr.body);
       return expr;
     case "TableExpr":
-      for (const field of expr.fields) {
-        if (field.kind === "computed") field.key = foldExpr(field.key);
-        field.value = foldExpr(field.value);
-      }
+      expr.fields = expr.fields.map((field) => {
+        const value = foldExpr(field.value);
+        if (field.kind !== "computed") return { ...field, value };
+        const key = foldExpr(field.key);
+        if (key.type === "StringExpr") {
+          const name = stringIndexToFieldName(key.raw);
+          if (name) return { kind: "named" as const, name, value };
+        }
+        return { kind: "computed" as const, key, value };
+      });
       return expr;
     case "UnaryExpr": {
       expr.operand = foldExpr(expr.operand);

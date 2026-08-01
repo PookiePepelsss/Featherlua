@@ -19,7 +19,7 @@ describe("hoist-repeated-strings", () => {
 
   it("does not hoist when it would not save bytes (short string, few uses)", () => {
     const o = out('print("a")\nprint("a")\nprint("a")', bare);
-    expect(o).toBe('print("a")print("a")print("a")');
+    expect(o).toBe('print"a"print"a"print"a"');
   });
 
   it("does not hoist a string used only twice", () => {

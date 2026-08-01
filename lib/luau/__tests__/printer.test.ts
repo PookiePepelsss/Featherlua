@@ -65,6 +65,23 @@ describe("printer: needsSpace prevents token collisions", () => {
   });
 });
 
+describe("printer: shortest call argument syntax", () => {
+  it("omits parentheses around a single string or table argument", () => {
+    expect(roundtrip('local a = send("payload")')).toBe('local a=send"payload"');
+    expect(roundtrip("local a = build({ value = 1 })")).toBe("local a=build{value=1}");
+  });
+
+  it("uses the same shorthand for method calls and interpolated strings", () => {
+    expect(roundtrip('remote:FireServer("payload")')).toBe('remote:FireServer"payload"');
+    expect(roundtrip("local a = show(`value {x}`)")).toBe("local a=show`value {x}`");
+  });
+
+  it("keeps parentheses for zero or multiple arguments", () => {
+    expect(roundtrip("run()")).toBe("run()");
+    expect(roundtrip('send("payload", 1)')).toBe('send("payload",1)');
+  });
+});
+
 describe("printer: license/shebang not handled here (compress-aggressive's job)", () => {
   it("print() itself only emits code, comments are stripped upstream by the lexer", () => {
     expect(roundtrip("-- @license MIT\nlocal x = 1")).toBe("local x=1");

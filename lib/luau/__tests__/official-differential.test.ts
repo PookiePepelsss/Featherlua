@@ -32,6 +32,26 @@ describe("official Luau compiler and differential execution", () => {
     if (result.ok) expect(compileWithOfficialLuau(module, result.output).success).toBe(true);
   });
 
+  it("preserves shorthand calls, table keys, and type-exposed folds", () => {
+    const source = `
+      local function id(value) return value end
+      local receiver = {}
+      function receiver:take(value) return value end
+      local item = id({["name"] = 3})
+      print(id("payload"), receiver:take("method"), item.name, (1 :: number) + 2)
+    `;
+    const compressed = compressAggressive(source);
+    expect(compressed.ok).toBe(true);
+    if (!compressed.ok) return;
+    expect(compressed.output).toMatch(/[A-Za-z]"payload"/);
+    expect(compressed.output).toContain("{name=3}");
+    const originalRun = executeWithOfficialLuau(module, source);
+    const compressedRun = executeWithOfficialLuau(module, compressed.output);
+    expect(originalRun.success, originalRun.error).toBe(true);
+    expect(compressedRun.success, compressedRun.error).toBe(true);
+    expect(compressedRun.output).toBe(originalRun.output);
+  });
+
   for (const scenario of corpusScenarios.slice(0, 10)) {
     it(`preserves runtime output: ${scenario.name}`, () => {
       const compressed = compressAggressive(scenario.source);

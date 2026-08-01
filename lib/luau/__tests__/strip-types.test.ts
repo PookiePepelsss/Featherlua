@@ -60,11 +60,11 @@ describe("Aggressive mode strips type annotations (zero runtime effect in Luau)"
     expect(result.output).toBe("local a=1");
   });
 
-  it("unwraps a type assertion nested inside a binary expression, preserving precedence", () => {
+  it("unwraps a type assertion before folding the exposed expression", () => {
     const result = compressNoUnusedCleanup("local x = 1 + (2 :: number)");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toBe("local a=1+2");
+    expect(result.output).toBe("local a=3");
   });
 
   it("removes local attributes' type annotation but keeps the attribute itself (canonical <attrib>: Type order)", () => {
