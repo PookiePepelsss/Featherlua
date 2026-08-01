@@ -15,7 +15,7 @@ import { hoistRepeatedStrings, resetStringHoistCounter } from "./hoist-repeated-
 import { mergeAdjacentLocals } from "./merge-adjacent-locals";
 import { mergeAdjacentAssigns } from "./merge-adjacent-assigns";
 import { aliasRepeatedGlobalCalls, resetAliasCounter } from "./alias-repeated-global-calls";
-import { hasExoticEnvironmentSignal } from "./exotic-environment-guard";
+import { hasExoticEnvironmentSignal, hasLocalReflectionSignal } from "./exotic-environment-guard";
 
 export type CompressResult =
   | { ok: true; output: string; warning?: string }
@@ -138,7 +138,7 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
   resetHoistCounter();
   resetStringHoistCounter();
   resetAliasCounter();
-  const opts: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
+  let opts: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
   let parsed;
   try {
     parsed = parse(source);
@@ -148,16 +148,34 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
   }
 
   const { chunk, protectedComments } = parsed;
-  // Checked on the freshly parsed tree, before any pass has a chance to
-  // touch it -- purely informational, doesn't change what runs. See
-  // exotic-environment-guard.ts for why this specifically matters for
-  // hoistRepeatedAccess/aliasRepeatedGlobalCalls and not the other passes.
-  const warning =
-    (opts.hoistRepeatedAccess || opts.aliasRepeatedGlobalCalls) && hasExoticEnvironmentSignal(chunk)
-      ? "This script references an environment-manipulation API (_G, getfenv, hookmetamethod, ...). " +
-        "\"Hoist repeated access\" and \"Alias repeated global calls\" assume reading a global has no " +
-        "side effect, which may not hold here -- double-check the output if you're relying on either option."
-      : undefined;
+  // Reflection APIs make local/upvalue/constant layout observable. Preserve
+  // that layout automatically instead of asking the user to recognize every
+  // executor-specific spelling and configure a safe pass set by hand.
+  const warnings: string[] = [];
+  if (hasLocalReflectionSignal(chunk)) {
+    opts = {
+      ...opts,
+      rename: false,
+      foldConstants: false,
+      propagateConstants: false,
+      removeUnusedLocals: false,
+      mergeAdjacentLocals: false,
+      mergeAdjacentAssigns: false,
+      hoistRepeatedStrings: false,
+      hoistRepeatedAccess: false,
+      aliasRepeatedGlobalCalls: false,
+      mergeAdjacentAssignsAcrossFields: false,
+    };
+    warnings.push(
+      "Reflection-sensitive APIs were detected. Layout-changing aggressive passes were skipped automatically to preserve locals, upvalues, constants, and stack slots.",
+    );
+  }
+  if ((opts.hoistRepeatedAccess || opts.aliasRepeatedGlobalCalls) && hasExoticEnvironmentSignal(chunk)) {
+    warnings.push(
+      "This script references an environment-manipulation API (_G, getfenv, hookmetamethod, ...). " +
+        "The selected experimental passes assume reading a global has no side effect, so double-check their output.",
+    );
+  }
   const resolved = transformForAggressive(chunk, opts);
   const renameMap = opts.rename ? computeRenameMap(resolved) : undefined;
   const printed = print(chunk, renameMap);
@@ -179,5 +197,5 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
 
   let output = printed;
   if (protectedComments.length) output = `${protectedComments.join("\n")}\n${output}`;
-  return warning ? { ok: true, output, warning } : { ok: true, output };
+  return warnings.length ? { ok: true, output, warning: warnings.join(" ") } : { ok: true, output };
 }

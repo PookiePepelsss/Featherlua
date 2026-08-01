@@ -233,8 +233,17 @@ export default function Home() {
   const [options, setOptions] = useState<AggressiveOptions>(DEFAULT_AGGRESSIVE_OPTIONS);
   const [stats, setStats] = useState<{ inputChars: number; inputBytes: number; outputChars: number; outputBytes: number } | null>(null);
 
+  function invalidateResult() {
+    setOutput("");
+    setError(null);
+    setWarning(null);
+    setStats(null);
+    setCopied(false);
+  }
+
   function toggleOption(key: keyof AggressiveOptions) {
     setOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+    invalidateResult();
   }
 
   function byteLength(text: string) {
@@ -296,7 +305,10 @@ export default function Home() {
         <textarea
           id="source"
           value={source}
-          onChange={(event) => setSource(event.target.value)}
+          onChange={(event) => {
+            setSource(event.target.value);
+            invalidateResult();
+          }}
           spellCheck={false}
           placeholder="Input"
           autoFocus
@@ -397,14 +409,6 @@ export default function Home() {
             />
             Merge adjacent assigns
           </label>
-          <label title="Experimental: assigning to a table field can invoke a custom __newindex, and merging changes the relative order two such handlers fire in. Off by default.">
-            <input
-              type="checkbox"
-              checked={options.mergeAdjacentAssignsAcrossFields}
-              onChange={() => toggleOption("mergeAdjacentAssignsAcrossFields")}
-            />
-            Merge adjacent field assigns (experimental)
-          </label>
           <label>
             <input
               type="checkbox"
@@ -412,22 +416,6 @@ export default function Home() {
               onChange={() => toggleOption("hoistRepeatedStrings")}
             />
             Dedupe repeated strings
-          </label>
-          <label title="Experimental: assumes accessed tables have no custom __index side effects. Off by default.">
-            <input
-              type="checkbox"
-              checked={options.hoistRepeatedAccess}
-              onChange={() => toggleOption("hoistRepeatedAccess")}
-            />
-            Hoist repeated access (experimental)
-          </label>
-          <label title="Experimental: assumes reading the global has no side effect. Off by default.">
-            <input
-              type="checkbox"
-              checked={options.aliasRepeatedGlobalCalls}
-              onChange={() => toggleOption("aliasRepeatedGlobalCalls")}
-            />
-            Alias repeated global calls (experimental)
           </label>
         </fieldset>
       )}
@@ -438,7 +426,10 @@ export default function Home() {
             type="button"
             className={mode === "safe" ? "modeActive" : undefined}
             aria-pressed={mode === "safe"}
-            onClick={() => setMode("safe")}
+            onClick={() => {
+              setMode("safe");
+              invalidateResult();
+            }}
           >
             Safe
           </button>
@@ -446,7 +437,10 @@ export default function Home() {
             type="button"
             className={mode === "aggressive" ? "modeActive" : undefined}
             aria-pressed={mode === "aggressive"}
-            onClick={() => setMode("aggressive")}
+            onClick={() => {
+              setMode("aggressive");
+              invalidateResult();
+            }}
           >
             Aggressive
           </button>

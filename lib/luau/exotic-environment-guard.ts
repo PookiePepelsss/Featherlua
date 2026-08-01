@@ -1,4 +1,5 @@
 import type { Chunk, Expr, Stat } from "./ast";
+import { someBlock } from "./ast-search";
 
 // hoist-repeated-access.ts and alias-repeated-global-calls.ts both rest on
 // one assumption: reading a global has no side effect. That assumption
@@ -37,6 +38,89 @@ const EXOTIC_ENVIRONMENT_SIGNALS = new Set([
 
 export function hasExoticEnvironmentSignal(chunk: Chunk): boolean {
   return blockHasSignal(chunk.body);
+}
+
+// APIs that can observe or mutate locals, upvalues, constants, prototypes,
+// or stack slots make source-level layout observable. When one appears, the
+// compressor keeps only transforms that don't change that layout. This is
+// intentionally a signal check, not a claim that every executor exposes the
+// same API surface; aliases assembled dynamically cannot be proven statically.
+const LOCAL_REFLECTION_IDENTIFIERS = new Set([
+  "getgc",
+  "getreg",
+  "getregistry",
+  "getupvalue",
+  "getupvalues",
+  "setupvalue",
+  "getconstants",
+  "getconstant",
+  "setconstant",
+  "getproto",
+  "getprotos",
+  "setproto",
+  "getstack",
+  "setstack",
+  "getlocal",
+  "setlocal",
+  "getscriptclosure",
+  "getscriptfunction",
+  "getscriptbytecode",
+  "dumpstring",
+]);
+
+const DEBUG_REFLECTION_MEMBERS = new Set([
+  "getupvalue",
+  "getupvalues",
+  "setupvalue",
+  "getlocal",
+  "setlocal",
+  "getinfo",
+  "info",
+  "getregistry",
+  "getuservalue",
+  "setuservalue",
+  "getconstants",
+  "getconstant",
+  "setconstant",
+  "getproto",
+  "getprotos",
+  "setproto",
+  "getstack",
+  "setstack",
+]);
+
+export function hasLocalReflectionSignal(chunk: Chunk): boolean {
+  return someBlock(chunk.body, (expr) => {
+    if (expr.type === "Identifier") return LOCAL_REFLECTION_IDENTIFIERS.has(expr.name);
+    if (expr.type === "MemberExpr") {
+      if (LOCAL_REFLECTION_IDENTIFIERS.has(expr.name)) return true;
+      return (
+        expr.object.type === "Identifier" &&
+        expr.object.name === "debug" &&
+        DEBUG_REFLECTION_MEMBERS.has(expr.name)
+      );
+    }
+    if (expr.type === "MethodCallExpr") {
+      if (LOCAL_REFLECTION_IDENTIFIERS.has(expr.method)) return true;
+      return (
+        expr.object.type === "Identifier" &&
+        expr.object.name === "debug" &&
+        DEBUG_REFLECTION_MEMBERS.has(expr.method)
+      );
+    }
+    if (expr.type === "IndexExpr" && expr.index.type === "StringExpr") {
+      const key = /^(?:"([A-Za-z_][A-Za-z0-9_]*)"|'([A-Za-z_][A-Za-z0-9_]*)')$/.exec(expr.index.raw);
+      const name = key?.[1] ?? key?.[2];
+      if (name && LOCAL_REFLECTION_IDENTIFIERS.has(name)) return true;
+      return (
+        name !== undefined &&
+        expr.object.type === "Identifier" &&
+        expr.object.name === "debug" &&
+        DEBUG_REFLECTION_MEMBERS.has(name)
+      );
+    }
+    return false;
+  });
 }
 
 function blockHasSignal(stats: Stat[]): boolean {

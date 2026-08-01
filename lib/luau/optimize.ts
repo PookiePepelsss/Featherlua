@@ -147,21 +147,55 @@ function foldLogical(left: Expr, right: Expr, op: "and" | "or"): Expr | undefine
   return truthy ? left : right;
 }
 
-// String literal `..` concatenation, done by splicing RAW token text
-// (never decoding escapes): each operand's raw content between its quotes
-// is copied verbatim into a new string with the same quote character.
-// Since both operands already lexed successfully, any backslash in their
-// raw content is definitely the start of a complete, self-contained escape
-// pair (scanQuoted's escape-skip logic guarantees this) -- concatenation
-// can't merge two fragments into a NEW escape sequence at the boundary.
-// Restricted to matching plain-quote strings (not long-bracket `[[...]]`,
-// not mismatched quote characters) to avoid needing any re-escaping logic.
+// String literal `..` concatenation by splicing raw token text. Decimal
+// escapes shorter than three digits and a trailing `\z` can absorb text
+// across the old token boundary, so those ambiguous cases are rejected.
+// Fixed-width and ordinary escapes can be copied without decoding.
+function trailingAbsorbingEscape(raw: string): { kind: "decimal"; digits: number } | { kind: "z" } | undefined {
+  let index = 0;
+  while (index < raw.length) {
+    if (raw[index] !== "\\") {
+      index += 1;
+      continue;
+    }
+    const next = raw[index + 1];
+    if (next === undefined) return undefined;
+    if (/[0-9]/.test(next)) {
+      let digits = 1;
+      while (digits < 3 && /[0-9]/.test(raw[index + 1 + digits] ?? "")) digits += 1;
+      index += 1 + digits;
+      if (index === raw.length) return { kind: "decimal", digits };
+      continue;
+    }
+    if (next === "z") {
+      index += 2;
+      while (/\s/u.test(raw[index] ?? "")) index += 1;
+      if (index === raw.length) return { kind: "z" };
+      continue;
+    }
+    if (next === "x") {
+      index += 4;
+      continue;
+    }
+    if (next === "u" && raw[index + 2] === "{") {
+      const close = raw.indexOf("}", index + 3);
+      index = close === -1 ? raw.length : close + 1;
+      continue;
+    }
+    index += 2;
+  }
+  return undefined;
+}
+
 function foldConcat(left: Expr, right: Expr): Expr | undefined {
   if (left.type !== "StringExpr" || right.type !== "StringExpr") return undefined;
   const quote = left.raw[0];
   if ((quote !== "'" && quote !== '"') || right.raw[0] !== quote) return undefined;
   const leftInner = left.raw.slice(1, -1);
   const rightInner = right.raw.slice(1, -1);
+  const trailing = trailingAbsorbingEscape(leftInner);
+  if (trailing?.kind === "decimal" && trailing.digits < 3 && /^[0-9]/.test(rightInner)) return undefined;
+  if (trailing?.kind === "z" && /^\s/u.test(rightInner)) return undefined;
   return { type: "StringExpr", raw: `${quote}${leftInner}${rightInner}${quote}` };
 }
 

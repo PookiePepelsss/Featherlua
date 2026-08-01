@@ -1,15 +1,17 @@
 import type { AssignStat, Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 import { isCallExpr, someExpr } from "./ast-search";
+import { isDefinitelyInert } from "./effect-analysis";
 
 // `a=1 b=2` -> `a,b=1,2`, and chains further into a three-or-more-way merge
 // the same way merge-adjacent-locals.ts does: `prev` in mergeBlock below
 // is the running, already-merged accumulator, so each new candidate is
 // checked against its current (possibly already multi-target) shape.
 // Only bare Identifier targets by default (never `t[k]=`, whose index
-// expression would need its own evaluation-order analysis), and no value
-// may contain a call -- a call's side effect could legitimately depend on
-// running between the two original stores. Two more guards: Lua evaluates
+// expression would need its own evaluation-order analysis). Every later RHS
+// must be definitely inert: calls, global reads, indexing, operators, and
+// other potentially throwing or observable expressions stay unmerged.
+// Two more guards: Lua evaluates
 // every value in a multi-assignment before any store happens, so
 // `a=1 b=a+1` (b reads a's NEW value) would silently become `a,b=1,a+1`
 // reading the OLD value -- refused whenever a later value reads an
@@ -89,6 +91,10 @@ function canMerge(a: Stat, b: Stat, includeMemberTargets: boolean): a is AssignS
   if (a.type !== "AssignStat" || b.type !== "AssignStat") return false;
   if (!isMergeableStat(a, includeMemberTargets) || !isMergeableStat(b, includeMemberTargets)) return false;
   if (a.values.some((v) => someExpr(v, isCallExpr)) || b.values.some((v) => someExpr(v, isCallExpr))) return false;
+  // All values from the later statement are evaluated before any store in
+  // the merged form. Restrict them to expressions that cannot observe the
+  // delayed stores through calls, metamethods, errors, or environment reads.
+  if (!b.values.every(isDefinitelyInert)) return false;
   if (hasDuplicateTarget([...a.targets, ...b.targets])) return false;
   return !b.values.some((v) => a.targets.some((t) => referencesTarget(v, t)));
 }

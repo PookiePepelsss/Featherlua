@@ -1,5 +1,6 @@
 import type { Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
+import { isRemovableInitializer } from "./effect-analysis";
 
 // Removes `local` declarations (and unused `local function` definitions)
 // referenced nowhere, when the initializer can't possibly error or have a
@@ -7,12 +8,11 @@ import type { ResolvedProgram } from "./scope-resolver";
 // cleanup, which only drops what it actually inlined somewhere -- this
 // drops anything simply never used, propagatable or not.
 //
-// "Side-effect-free" allows literals, identifier reads, function
-// *definitions* (not calls -- the body doesn't run until called), and
-// tables built from pure fields. It excludes arithmetic/comparison/concat
-// and calls: Lua operators can throw on incompatible types (`1 < {}`,
-// `1 + "x"`), and a call can do anything, so removing one would risk
-// silently changing behavior.
+// Removable initializers are deliberately narrower than merely looking
+// side-effect-free: literals, resolved local reads, function definitions,
+// and tables whose values and computed keys are themselves proven safe.
+// Global reads, indexing, operators, calls, and invalid computed keys can
+// invoke metamethods or throw, so they remain even when the local is unused.
 //
 // Only single-name, at-most-single-init locals qualify (`local x = f(),
 // g()` still calls g() for its side effect even though only f()'s result
@@ -26,25 +26,6 @@ export function removeUnusedLocals(resolved: ResolvedProgram): boolean {
     changed = true;
   });
   return changed;
-}
-
-function isPureExpr(expr: Expr): boolean {
-  switch (expr.type) {
-    case "NilExpr":
-    case "TrueExpr":
-    case "FalseExpr":
-    case "NumberExpr":
-    case "StringExpr":
-    case "Identifier":
-    case "FunctionExpr": // defining a closure is pure; its body doesn't run until called
-      return true;
-    case "TableExpr":
-      return expr.fields.every((f) => (f.kind !== "computed" || isPureExpr(f.key)) && isPureExpr(f.value));
-    case "ParenExpr":
-      return isPureExpr(expr.expr);
-    default:
-      return false;
-  }
 }
 
 // === pass 1: count every Identifier reference by symbolId, everywhere ===
@@ -210,7 +191,7 @@ function isUnusedLocal(stat: Stat, counts: Map<number, number>): boolean {
   // exclusion.
   if (stat.names[0].attrib === "close") return false;
   if (!isUnused(stat.names[0].symbolId, counts)) return false;
-  return stat.init.length === 0 || isPureExpr(stat.init[0]);
+  return stat.init.length === 0 || isRemovableInitializer(stat.init[0]);
 }
 
 function isUnusedLocalFunction(stat: Stat, counts: Map<number, number>): boolean {
