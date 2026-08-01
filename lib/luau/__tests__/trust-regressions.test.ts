@@ -91,7 +91,7 @@ describe("trust regressions: unused initializers", () => {
   });
 });
 
-describe("trust regressions: reflection-aware fallback", () => {
+describe("trust regressions: reflection warnings do not change selected options", () => {
   const executorReflectionNames = [
     "getgc",
     "getreg",
@@ -116,16 +116,18 @@ describe("trust regressions: reflection-aware fallback", () => {
   ];
 
   for (const name of executorReflectionNames) {
-    it(`falls back conservatively when ${name} is referenced`, () => {
+    it(`warns without disabling compression when ${name} is referenced`, () => {
       const result = compressAggressive(`local capturedValue=1\n${name}(target)\nreturn capturedValue`);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.warning).toContain("Reflection-sensitive");
-      expect(result.output).toContain("local capturedValue=1");
+      expect(result.warning).toContain("reflection/executor APIs");
+      expect(result.warning).toContain("Rename locals");
+      expect(result.warning).toContain("options remain enabled");
+      expect(result.output).not.toContain("capturedValue");
     });
   }
 
-  it("preserves an upvalue that debug.setupvalue addresses by slot", () => {
+  it("warns but does not preserve layout automatically for debug.setupvalue", () => {
     const source =
       "local capturedValue=1\n" +
       "local function readValue() return capturedValue end\n" +
@@ -134,17 +136,17 @@ describe("trust regressions: reflection-aware fallback", () => {
     const result = compressAggressive(source);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.warning).toContain("Reflection-sensitive");
-    expect(result.output).toContain("local capturedValue=1");
-    expect(result.output).toContain("local function readValue()");
+    expect(result.warning).toContain("reflection/executor APIs");
+    expect(result.output).not.toContain("capturedValue");
+    expect(result.output).not.toContain("readValue");
   });
 
   it("recognizes namespaced executor debug APIs", () => {
     const result = compressAggressive("local preservedName=1\ndebug.getconstants(target)\nreturn preservedName");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.warning).toContain("Reflection-sensitive");
-    expect(result.output).toContain("local preservedName=1");
+    expect(result.warning).toContain("reflection/executor APIs");
+    expect(result.output).not.toContain("preservedName");
   });
 
   it("recognizes method and indexed spellings of reflection APIs", () => {
@@ -152,9 +154,16 @@ describe("trust regressions: reflection-aware fallback", () => {
       const result = compressAggressive(`local preservedName=1\n${call}\nreturn preservedName`);
       expect(result.ok).toBe(true);
       if (!result.ok) continue;
-      expect(result.warning).toContain("Reflection-sensitive");
-      expect(result.output).toContain("local preservedName=1");
+      expect(result.warning).toContain("reflection/executor APIs");
+      expect(result.output).not.toContain("preservedName");
     }
+  });
+
+  it("does not warn when no reflection-sensitive option is selected", () => {
+    const result = compressAggressive("getgc(target)", noPasses);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.warning).toBeUndefined();
   });
 
   it("does not treat ordinary debug profiling as layout reflection", () => {

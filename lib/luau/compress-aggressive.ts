@@ -138,7 +138,7 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
   resetHoistCounter();
   resetStringHoistCounter();
   resetAliasCounter();
-  let opts: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
+  const opts: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
   let parsed;
   try {
     parsed = parse(source);
@@ -148,27 +148,27 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
   }
 
   const { chunk, protectedComments } = parsed;
-  // Reflection APIs make local/upvalue/constant layout observable. Preserve
-  // that layout automatically instead of asking the user to recognize every
-  // executor-specific spelling and configure a safe pass set by hand.
   const warnings: string[] = [];
   if (hasLocalReflectionSignal(chunk)) {
-    opts = {
-      ...opts,
-      rename: false,
-      foldConstants: false,
-      propagateConstants: false,
-      removeUnusedLocals: false,
-      mergeAdjacentLocals: false,
-      mergeAdjacentAssigns: false,
-      hoistRepeatedStrings: false,
-      hoistRepeatedAccess: false,
-      aliasRepeatedGlobalCalls: false,
-      mergeAdjacentAssignsAcrossFields: false,
-    };
-    warnings.push(
-      "Reflection-sensitive APIs were detected. Layout-changing aggressive passes were skipped automatically to preserve locals, upvalues, constants, and stack slots.",
-    );
+    const selectedReflectionSensitiveOptions = [
+      opts.rename && "Rename locals",
+      opts.foldConstants && "Fold constants",
+      opts.propagateConstants && "Propagate constants",
+      opts.removeUnusedLocals && "Remove unused locals",
+      opts.mergeAdjacentLocals && "Merge adjacent locals",
+      opts.mergeAdjacentAssigns && "Merge adjacent assigns",
+      opts.hoistRepeatedStrings && "Dedupe repeated strings",
+      opts.hoistRepeatedAccess && "Hoist repeated access",
+      opts.aliasRepeatedGlobalCalls && "Alias repeated global calls",
+      opts.mergeAdjacentAssignsAcrossFields && "Merge adjacent field assigns",
+    ].filter((label): label is string => Boolean(label));
+    if (selectedReflectionSensitiveOptions.length) {
+      warnings.push(
+        "This script references reflection/executor APIs that can observe locals, upvalues, constants, prototypes, or stack slots. " +
+          `These selected options may change what those APIs observe: ${selectedReflectionSensitiveOptions.join(", ")}. ` +
+          "The options remain enabled; test the output in your executor.",
+      );
+    }
   }
   if ((opts.hoistRepeatedAccess || opts.aliasRepeatedGlobalCalls) && hasExoticEnvironmentSignal(chunk)) {
     warnings.push(
