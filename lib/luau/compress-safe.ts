@@ -130,19 +130,29 @@ function scanInterpolationExpression(source: string, start: number) {
   return source.length;
 }
 
-function needsSpace(left: string, right: string) {
-  const leftEnd = left.at(-1) ?? "";
-  const rightStart = right[0] ?? "";
+interface SafeToken {
+  text: string;
+  // Only true for a scanned NUMBER token. The digit-before-dot guard below
+  // exists to keep a real number like `1` from merging with a following
+  // `.5` into what would misread as `1.5` -- it must never fire just
+  // because an IDENTIFIER happens to end in a digit (Vector3, Color3,
+  // UDim2, ...), which is never ambiguous the same way.
+  isNumber: boolean;
+}
+
+function needsSpace(left: SafeToken, right: SafeToken) {
+  const leftEnd = left.text.at(-1) ?? "";
+  const rightStart = right.text[0] ?? "";
   if (identifierContinue.test(leftEnd) && identifierContinue.test(rightStart)) return true;
-  if (digit.test(leftEnd) && rightStart === ".") return true;
+  if (left.isNumber && digit.test(leftEnd) && rightStart === ".") return true;
   if (leftEnd === "." && digit.test(rightStart)) return true;
   if (leftEnd === "-" && rightStart === "-") return true;
   if (leftEnd === "[" && (rightStart === "[" || rightStart === "=")) return true;
-  return compoundSymbolSet.has(left + right);
+  return compoundSymbolSet.has(left.text + right.text);
 }
 
 function scanSafe(source: string, dialect: LuaDialect) {
-  const tokens: string[] = [];
+  const tokens: SafeToken[] = [];
   const protectedComments: string[] = [];
   let cursor = 0;
 
@@ -172,6 +182,7 @@ function scanSafe(source: string, dialect: LuaDialect) {
     }
 
     const start = cursor;
+    let isNumberToken = false;
     if (char === "'" || char === '"') cursor = scanQuoted(source, cursor, char);
     else if (char === "`") cursor = scanInterpolated(source, cursor);
     else if (char === "[") {
@@ -179,6 +190,7 @@ function scanSafe(source: string, dialect: LuaDialect) {
       cursor = bracket ? scanLongBracket(source, bracket.body, bracket.level) : cursor + 1;
     } else if (digit.test(char) || (char === "." && digit.test(source[cursor + 1] ?? ""))) {
       cursor = scanNumber(source, cursor, dialect);
+      isNumberToken = true;
     } else if (identifierStart.test(char)) {
       cursor += 1;
       while (cursor < source.length && identifierContinue.test(source[cursor])) cursor += 1;
@@ -188,19 +200,19 @@ function scanSafe(source: string, dialect: LuaDialect) {
       cursor += matched?.length ?? 1;
     }
 
-    const token = source.slice(start, cursor);
-    tokens.push(token);
+    const text = source.slice(start, cursor);
+    tokens.push({ text, isNumber: isNumberToken });
   }
 
   return { tokens, protectedComments };
 }
 
-function renderSafe(tokens: string[], protectedComments: string[]) {
+function renderSafe(tokens: SafeToken[], protectedComments: string[]) {
   const outputParts: string[] = [];
-  let previousToken = "";
+  let previousToken: SafeToken | undefined;
   for (const token of tokens) {
     if (previousToken && needsSpace(previousToken, token)) outputParts.push(" ");
-    outputParts.push(token);
+    outputParts.push(token.text);
     previousToken = token;
   }
 
@@ -229,7 +241,7 @@ export function verifySafeCompression(source: string, output: string, dialect: L
     return { success: false as const, error: "the output token count differs from the input" };
   }
   for (let index = 0; index < input.tokens.length; index += 1) {
-    if (input.tokens[index] !== compressed.tokens[index]) {
+    if (input.tokens[index].text !== compressed.tokens[index].text) {
       return { success: false as const, error: `token ${index + 1} differs from the input` };
     }
   }

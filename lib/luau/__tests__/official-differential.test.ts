@@ -10,6 +10,7 @@ import {
   type LuauModule,
 } from "../official/runtime";
 import { corpusScenarios } from "./corpus-scenarios";
+import { executorScenarios } from "./executor-scenarios";
 
 let module: LuauModule;
 
@@ -51,6 +52,39 @@ describe("official Luau compiler and differential execution", () => {
     expect(compressedRun.success, compressedRun.error).toBe(true);
     expect(compressedRun.output).toBe(originalRun.output);
   });
+
+  it("preserves RemoteEvent and RemoteFunction argument order and values", () => {
+    const source = `
+      local remote = {}
+      function remote:FireServer(...)
+        local count = select("#", ...)
+        local action, amount, missing, data = ...
+        print(count, action, amount, missing == nil, data.slot, data.enabled)
+      end
+      function remote:InvokeServer(action, data, enabled)
+        return action, data.id, enabled
+      end
+      remote:FireServer("equip", 42, nil, {slot = 3, enabled = true})
+      print(remote:InvokeServer("lookup", {id = 7}, true))
+    `;
+    const compressed = compressAggressive(source);
+    expect(compressed.ok).toBe(true);
+    if (!compressed.ok) return;
+    const originalRun = executeWithOfficialLuau(module, source);
+    const compressedRun = executeWithOfficialLuau(module, compressed.output);
+    expect(originalRun.success, originalRun.error).toBe(true);
+    expect(compressedRun.success, compressedRun.error).toBe(true);
+    expect(compressedRun.output).toBe(originalRun.output);
+  });
+
+  for (const scenario of executorScenarios) {
+    it(`official compiler accepts executor fixture: ${scenario.name}`, () => {
+      expect(compileWithOfficialLuau(module, scenario.source).success).toBe(true);
+      const compressed = compressAggressive(scenario.source);
+      expect(compressed.ok).toBe(true);
+      if (compressed.ok) expect(compileWithOfficialLuau(module, compressed.output).success).toBe(true);
+    });
+  }
 
   for (const scenario of corpusScenarios.slice(0, 10)) {
     it(`preserves runtime output: ${scenario.name}`, () => {
