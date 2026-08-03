@@ -19,7 +19,7 @@ describe("optimize: number literal canonicalization (shortest round-tripping for
   });
 
   it("strips underscore digit separators when shorter", () => {
-    expect(output("local x = 1_000_000")).toBe("local a=1000000");
+    expect(output("local x = 1_000_000")).toBe("local a=1e6");
   });
 
   it("converts hex to decimal when decimal is shorter", () => {

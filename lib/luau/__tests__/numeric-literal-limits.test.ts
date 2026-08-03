@@ -42,6 +42,16 @@ const LITERALS = [
   "-0.0",
   "1e21",
   "1e-7",
+  // Exponent notation is shorter than the plain spelling well before the
+  // point `String` starts using it on its own.
+  "1000000",
+  "100000",
+  "0.00001",
+  "4294967296",
+  "65536",
+  "123000",
+  "1024 * 1024",
+  "0.0000000001",
 ];
 
 describe("numeric literals fold to what the runtime computes", () => {

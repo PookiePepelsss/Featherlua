@@ -34,8 +34,15 @@ export function parseLuauNumber(raw: string): number | undefined {
   return parseFloat(clean);
 }
 
+// `String` only reaches for exponent notation past 1e21, so it spells
+// 1000000 in full where `1e6` is four characters shorter. `toExponential()`
+// with no argument emits exactly the digits needed to identify the double,
+// so both spellings parse back to the same value and the shorter one wins.
 function formatLuauNumber(n: number): string {
-  return String(n);
+  const plain = String(n);
+  if (!Number.isFinite(n)) return plain;
+  const exponential = n.toExponential().replace("e+", "e");
+  return exponential.length < plain.length ? exponential : plain;
 }
 
 function asNumberLiteral(expr: Expr): number | undefined {
