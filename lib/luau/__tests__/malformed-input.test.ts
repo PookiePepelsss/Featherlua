@@ -26,7 +26,7 @@ describe("malformed input never throws", () => {
   for (const src of inputs) {
     const label = JSON.stringify(src.length > 30 ? `${src.slice(0, 30)}...` : src);
     it(`compressSafe: ${label}`, () => {
-      compressSafe(src, "luau");
+      compressSafe(src);
     });
     it(`compressAggressive: ${label}`, () => {
       compressAggressive(src);

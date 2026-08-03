@@ -11,8 +11,8 @@ function containsName(output: string, name: string) {
 describe("executor compatibility corpus", () => {
   for (const scenario of executorScenarios) {
     it(`${scenario.name}: Safe mode preserves every token`, () => {
-      const output = compressSafe(scenario.source, "luau");
-      expect(verifySafeCompression(scenario.source, output, "luau")).toEqual({ success: true });
+      const output = compressSafe(scenario.source);
+      expect(verifySafeCompression(scenario.source, output)).toEqual({ success: true });
       expect(new TextEncoder().encode(output).length).toBeLessThanOrEqual(new TextEncoder().encode(scenario.source).length);
     });
 

@@ -31,7 +31,7 @@ describe("executor scripts: differential execution", () => {
       const before = run(scenario.source);
       expect(before.success, `baseline failed: ${before.error}`).toBe(true);
 
-      const safe = run(compressSafe(scenario.source, "luau"));
+      const safe = run(compressSafe(scenario.source));
       expect(safe.success, `safe output failed: ${safe.error}`).toBe(true);
       expect(normalize(safe.output)).toBe(normalize(before.output));
 
@@ -52,7 +52,7 @@ describe("executor scripts: large script differential execution", () => {
       expect(before.success, `baseline failed: ${before.error}`).toBe(true);
       expect(before.output.length).toBeGreaterThan(0);
 
-      const safe = run(compressSafe(script.source, "luau"));
+      const safe = run(compressSafe(script.source));
       expect(safe.success, `safe output failed: ${safe.error}`).toBe(true);
       expect(normalize(safe.output)).toBe(normalize(before.output));
 

@@ -1,10 +1,11 @@
-import type { LuaDialect } from "./dialects";
-
+// Luau-only lossless tokenizer. Every symbol here is one Luau lexes as a
+// single token; Lua 5.x/LuaJIT-only forms (<<, >>, &=, |=, hex floats,
+// LL/ULL suffixes) are deliberately absent because Luau has no bitwise
+// operators and no integer suffixes.
 const compoundSymbols = [
-  "...", "..=", "//=", "<<=", ">>=", "==", "~=", "<=", ">=", "+=", "-=", "*=", "/=",
-  "%=", "^=", "::", "->", "//", "<<", ">>", "..", "&=", "|=",
+  "...", "..=", "//=", "==", "~=", "<=", ">=", "+=", "-=", "*=", "/=",
+  "%=", "^=", "::", "->", "//", "..",
 ];
-const compoundSymbolSet = new Set(compoundSymbols);
 const compoundSymbolsByFirstChar = new Map<string, string[]>();
 for (const symbol of compoundSymbols) {
   const key = symbol[0];
@@ -44,45 +45,35 @@ function scanQuoted(source: string, start: number, quote: string) {
   return source.length;
 }
 
-function scanNumber(source: string, start: number, dialect: LuaDialect) {
+function scanNumber(source: string, start: number) {
   let cursor = start;
   const takeDigits = (pattern: RegExp) => {
     while (cursor < source.length && (pattern.test(source[cursor]) || source[cursor] === "_")) cursor += 1;
   };
-  const takeExponent = (lower: string, upper: string) => {
-    if (source[cursor] !== lower && source[cursor] !== upper) return;
+
+  if (source[cursor] === "0" && /[xX]/.test(source[cursor + 1] ?? "")) {
+    cursor += 2;
+    takeDigits(/[0-9a-fA-F]/);
+    return cursor;
+  }
+  if (source[cursor] === "0" && /[bB]/.test(source[cursor + 1] ?? "")) {
+    cursor += 2;
+    takeDigits(/[01]/);
+    return cursor;
+  }
+
+  if (source[cursor] === ".") cursor += 1;
+  takeDigits(/[0-9]/);
+  // `1..2` is concatenation, not a fractional part, so a dot only opens the
+  // fraction when it is not the start of `..`.
+  if (source[cursor] === "." && source[cursor + 1] !== ".") {
+    cursor += 1;
+    takeDigits(/[0-9]/);
+  }
+  if (source[cursor] === "e" || source[cursor] === "E") {
     cursor += 1;
     if (source[cursor] === "+" || source[cursor] === "-") cursor += 1;
     takeDigits(/[0-9]/);
-  };
-
-  if (source[cursor] === ".") {
-    cursor += 1;
-    takeDigits(/[0-9]/);
-    takeExponent("e", "E");
-  } else if (source[cursor] === "0" && /[xX]/.test(source[cursor + 1] ?? "")) {
-    cursor += 2;
-    takeDigits(/[0-9a-fA-F]/);
-    if (source[cursor] === "." && source[cursor + 1] !== ".") {
-      cursor += 1;
-      takeDigits(/[0-9a-fA-F]/);
-    }
-    takeExponent("p", "P");
-  } else if (source[cursor] === "0" && /[bB]/.test(source[cursor + 1] ?? "")) {
-    cursor += 2;
-    takeDigits(/[01]/);
-  } else {
-    takeDigits(/[0-9]/);
-    if (source[cursor] === "." && source[cursor + 1] !== ".") {
-      cursor += 1;
-      takeDigits(/[0-9]/);
-    }
-    takeExponent("e", "E");
-  }
-
-  if (dialect === "luajit") {
-    const suffix = /^(?:ULL|LL|ull|ll)/.exec(source.slice(cursor));
-    if (suffix) cursor += suffix[0].length;
   }
   return cursor;
 }
@@ -130,29 +121,50 @@ function scanInterpolationExpression(source: string, start: number) {
   return source.length;
 }
 
-interface SafeToken {
-  text: string;
-  // Only true for a scanned NUMBER token. The digit-before-dot guard below
-  // exists to keep a real number like `1` from merging with a following
-  // `.5` into what would misread as `1.5` -- it must never fire just
-  // because an IDENTIFIER happens to end in a digit (Vector3, Color3,
-  // UDim2, ...), which is never ambiguous the same way.
-  isNumber: boolean;
+// End offset of the single token starting at `cursor`. Shared by the
+// tokenizer and by needsSpace, so both agree on where a token stops.
+function scanTokenEnd(source: string, cursor: number) {
+  const char = source[cursor];
+  if (char === "'" || char === '"') return scanQuoted(source, cursor, char);
+  if (char === "`") return scanInterpolated(source, cursor);
+  if (char === "[") {
+    const bracket = longBracket(source, cursor);
+    return bracket ? scanLongBracket(source, bracket.body, bracket.level) : cursor + 1;
+  }
+  if (digit.test(char) || (char === "." && digit.test(source[cursor + 1] ?? ""))) {
+    return scanNumber(source, cursor);
+  }
+  if (identifierStart.test(char)) {
+    let end = cursor + 1;
+    while (end < source.length && identifierContinue.test(source[end])) end += 1;
+    return end;
+  }
+  const candidates = compoundSymbolsByFirstChar.get(char);
+  const matched = candidates?.find((candidate) => source.startsWith(candidate, cursor));
+  return cursor + (matched?.length ?? 1);
 }
 
-function needsSpace(left: SafeToken, right: SafeToken) {
-  const leftEnd = left.text.at(-1) ?? "";
-  const rightStart = right.text[0] ?? "";
-  if (identifierContinue.test(leftEnd) && identifierContinue.test(rightStart)) return true;
-  if (left.isNumber && digit.test(leftEnd) && rightStart === ".") return true;
-  if (leftEnd === "." && digit.test(rightStart)) return true;
+// A hand-maintained rule list can only cover the merges someone thought of,
+// and it missed several (`+` then `==` re-lexes to `+=` `=`; `..` then `..`
+// becomes `...` `.`). Instead, join the two tokens and re-scan: if the first
+// token of the joined text is not exactly `left`, the pair needs separating.
+// Comment and long-bracket openers are checked first because those are not
+// tokens at all, so re-scanning cannot see them.
+function needsSpace(left: string, right: string) {
+  const leftEnd = left.at(-1) ?? "";
+  const rightStart = right[0] ?? "";
   if (leftEnd === "-" && rightStart === "-") return true;
   if (leftEnd === "[" && (rightStart === "[" || rightStart === "=")) return true;
-  return compoundSymbolSet.has(left.text + right.text);
+  // Word characters stay apart even where this scanner would split them
+  // correctly: Luau reads a number and the identifier touching it as one
+  // malformed literal, so `1` before `and` has to keep its space.
+  if (identifierContinue.test(leftEnd) && identifierContinue.test(rightStart)) return true;
+
+  return scanTokenEnd(left + right, 0) !== left.length;
 }
 
-function scanSafe(source: string, dialect: LuaDialect) {
-  const tokens: SafeToken[] = [];
+function scanSafe(source: string) {
+  const tokens: string[] = [];
   const protectedComments: string[] = [];
   let cursor = 0;
 
@@ -182,37 +194,19 @@ function scanSafe(source: string, dialect: LuaDialect) {
     }
 
     const start = cursor;
-    let isNumberToken = false;
-    if (char === "'" || char === '"') cursor = scanQuoted(source, cursor, char);
-    else if (char === "`") cursor = scanInterpolated(source, cursor);
-    else if (char === "[") {
-      const bracket = longBracket(source, cursor);
-      cursor = bracket ? scanLongBracket(source, bracket.body, bracket.level) : cursor + 1;
-    } else if (digit.test(char) || (char === "." && digit.test(source[cursor + 1] ?? ""))) {
-      cursor = scanNumber(source, cursor, dialect);
-      isNumberToken = true;
-    } else if (identifierStart.test(char)) {
-      cursor += 1;
-      while (cursor < source.length && identifierContinue.test(source[cursor])) cursor += 1;
-    } else {
-      const candidates = compoundSymbolsByFirstChar.get(char);
-      const matched = candidates?.find((candidate) => source.startsWith(candidate, cursor));
-      cursor += matched?.length ?? 1;
-    }
-
-    const text = source.slice(start, cursor);
-    tokens.push({ text, isNumber: isNumberToken });
+    cursor = scanTokenEnd(source, cursor);
+    tokens.push(source.slice(start, cursor));
   }
 
   return { tokens, protectedComments };
 }
 
-function renderSafe(tokens: SafeToken[], protectedComments: string[]) {
+function renderSafe(tokens: string[], protectedComments: string[]) {
   const outputParts: string[] = [];
-  let previousToken: SafeToken | undefined;
+  let previousToken: string | undefined;
   for (const token of tokens) {
-    if (previousToken && needsSpace(previousToken, token)) outputParts.push(" ");
-    outputParts.push(token.text);
+    if (previousToken !== undefined && needsSpace(previousToken, token)) outputParts.push(" ");
+    outputParts.push(token);
     previousToken = token;
   }
 
@@ -220,14 +214,14 @@ function renderSafe(tokens: SafeToken[], protectedComments: string[]) {
   return protectedComments.length ? `${protectedComments.join("\n")}\n${body}`.trim() : body;
 }
 
-export function compressSafe(source: string, dialect: LuaDialect = "luau") {
-  const scanned = scanSafe(source, dialect);
+export function compressSafe(source: string) {
+  const scanned = scanSafe(source);
   return renderSafe(scanned.tokens, scanned.protectedComments);
 }
 
-export function verifySafeCompression(source: string, output: string, dialect: LuaDialect = "luau") {
-  const input = scanSafe(source, dialect);
-  const compressed = scanSafe(output, dialect);
+export function verifySafeCompression(source: string, output: string) {
+  const input = scanSafe(source);
+  const compressed = scanSafe(output);
 
   if (input.protectedComments.length !== compressed.protectedComments.length) {
     return { success: false as const, error: "a protected comment was changed or removed" };
@@ -241,11 +235,11 @@ export function verifySafeCompression(source: string, output: string, dialect: L
     return { success: false as const, error: "the output token count differs from the input" };
   }
   for (let index = 0; index < input.tokens.length; index += 1) {
-    if (input.tokens[index].text !== compressed.tokens[index].text) {
+    if (input.tokens[index] !== compressed.tokens[index]) {
       return { success: false as const, error: `token ${index + 1} differs from the input` };
     }
   }
-  if (compressSafe(output, dialect) !== output) {
+  if (compressSafe(output) !== output) {
     return { success: false as const, error: "the output is not stable after recompression" };
   }
   return { success: true as const };

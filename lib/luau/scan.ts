@@ -1,7 +1,8 @@
-// Forked from app/page.tsx's Safe-mode tokenizer scanning primitives.
+// Forked from Safe mode's scanning primitives in compress-safe.ts.
 // Deliberately duplicated (not shared) so Aggressive-mode development can
-// never regress Safe mode. Keep in sync manually if Safe mode's scanning
-// edge cases change.
+// never regress Safe mode, and because these variants report -1 on
+// unterminated literals so the parser can raise a real error, where Safe
+// mode instead runs to EOF and stays lossless on malformed input.
 
 export const WHITESPACE_RE = /\s/;
 export const DIGIT_RE = /\d/;

@@ -3,7 +3,6 @@
 import { compressAggressive } from "./compress-aggressive";
 import type { CompressionRequest, CompressionResponse } from "./compression-protocol";
 import { compressSafe, verifySafeCompression } from "./compress-safe";
-import { dialectLabel } from "./dialects";
 import {
   compileWithOfficialLuau,
   createOfficialLuau,
@@ -36,23 +35,19 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
   const started = performance.now();
   let response: CompressionResponse;
   try {
-    const aggressive = request.mode === "aggressive" && request.dialect === "luau";
+    const aggressive = request.mode === "aggressive";
     const result = aggressive
       ? compressAggressive(request.source, request.options)
-      : { ok: true as const, output: compressSafe(request.source, request.dialect) };
+      : { ok: true as const, output: compressSafe(request.source) };
     const safeCheck = result.ok && !aggressive
-      ? verifySafeCompression(request.source, result.output, request.dialect)
+      ? verifySafeCompression(request.source, result.output)
       : { success: true as const };
 
     if (!result.ok) {
       response = { id: request.id, ok: false, error: result.error.message };
     } else if (!safeCheck.success) {
-      response = {
-        id: request.id,
-        ok: false,
-        error: `${dialectLabel(request.dialect)} token-preservation check failed: ${safeCheck.error}.`,
-      };
-    } else if (request.dialect === "luau") {
+      response = { id: request.id, ok: false, error: `Token-preservation check failed: ${safeCheck.error}.` };
+    } else {
       const module = await getOfficialModule();
       const inputValidation = compileWithOfficialLuau(module, request.source);
       if (!inputValidation.success) {
@@ -66,21 +61,10 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
               output: result.output,
               warning: result.warning,
               durationMs: performance.now() - started,
-              validation: "official-luau",
               rolledBack: result.rolledBack ?? [],
             }
           : { id: request.id, ok: false, error: compilerError("output", outputValidation.error) };
       }
-    } else {
-      response = {
-        id: request.id,
-        ok: true,
-        output: result.output,
-        warning: `${dialectLabel(request.dialect)} uses lossless lexical compression with token-preservation checks; test the result in the target runtime.`,
-        durationMs: performance.now() - started,
-        validation: "lexical",
-        rolledBack: [],
-      };
     }
   } catch (error) {
     response = { id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) };

@@ -1,15 +1,16 @@
 # Lua Compressor
 
-A browser-only Lua/Luau compressor. No scripts are uploaded.
+A browser-only Luau compressor, built for Roblox and Roblox executor scripts. No scripts are uploaded.
 
 ## Use
 
 1. Run `npm ci` and `npm run dev`.
 2. Open `http://localhost:3000`.
-3. Choose Luau, Lua 5.1–5.4, or LuaJIT 2.x.
-4. Paste a script and press **Compress**.
+3. Paste a script, pick Safe or Aggressive, and press **Compress**.
 
-Luau supports Safe and Aggressive modes. Every Luau input and output is compiled with the official Luau WebAssembly build before a result is shown. Lua and LuaJIT use conservative token-preserving compression; aggressive Luau AST rewrites are intentionally unavailable for those dialects.
+Safe mode is a lossless tokenizer with a token-preservation check. Aggressive mode parses to an AST and renames locals, folds constants, and strips types. Every input and output is compiled with the official Luau WebAssembly build before a result is shown.
+
+Only Luau is supported. Lua 5.1-5.4 and LuaJIT are out of scope, so the tokenizer carries no bitwise operators, hex floats, or integer suffixes.
 
 Run `npm test` for parser, corpus, fuzz, and official-runtime differential tests. Run `npm run benchmark` for compression benchmarks.
 
