@@ -185,7 +185,14 @@ textarea[aria-invalid="true"] { color: #ff9b9b; }
   animation: fadeSlideIn 260ms ease;
 }
 
-.stats span[aria-hidden="true"] { color: var(--line); }
+.stats > span { gap: 5px; }
+
+.statsLabel {
+  margin-right: 5px;
+  color: var(--line);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
 
 .statsDelta {
   color: var(--accent);

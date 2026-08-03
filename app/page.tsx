@@ -161,9 +161,8 @@ export default function Home() {
 
       {stats && (
         <div className="stats" aria-live="polite">
-          <span>{stats.inputBytes.toLocaleString()} B</span>
-          <span aria-hidden="true">→</span>
-          <span>{stats.outputBytes.toLocaleString()} B</span>
+          <span><span className="statsLabel">Before</span>{stats.inputBytes.toLocaleString()} B</span>
+          <span><span className="statsLabel">After</span>{stats.outputBytes.toLocaleString()} B</span>
           {stats.inputBytes > 0 && (
             <span className="statsDelta">
               {stats.outputBytes <= stats.inputBytes
