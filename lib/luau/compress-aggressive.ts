@@ -48,7 +48,7 @@ function parseError(message: string, line = 0, col = 0): CompressResult {
 export function transformForAggressive(chunk: Chunk, options: AggressiveOptions = DEFAULT_AGGRESSIVE_OPTIONS): ResolvedProgram {
   if (options.stripTypes) stripTypeInfo(chunk);
   if (options.foldConstants) optimize(chunk);
-  if (options.hoistRepeatedStrings) hoistRepeatedStrings(chunk);
+  if (options.hoistRepeatedStrings) hoistRepeatedStrings(chunk, options.rename);
   const resolved = resolveScopes(chunk);
   if (options.propagateConstants || options.removeUnusedLocals) {
     for (let i = 0; i < 20; i += 1) {

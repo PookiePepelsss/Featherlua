@@ -15,7 +15,7 @@ export function propagateConstants(resolved: ResolvedProgram, willRename: boolea
     if (reassigned.has(id)) continue;
     const refCount = refCounts.get(id) ?? 0;
     // Keep string hoisting and propagation from undoing each other.
-    if (literal.type === "StringExpr" && stringLocalIsWorthKeeping(literal.raw, refCount)) continue;
+    if (literal.type === "StringExpr" && stringLocalIsWorthKeeping(literal.raw, refCount, willRename)) continue;
     const rawLength = literalRawLength(literal);
     if (rawLength !== undefined && !worthPropagatingLiteral(rawLength, refCount, nameLengths.get(id), willRename)) {
       continue;

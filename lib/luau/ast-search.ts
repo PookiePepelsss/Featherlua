@@ -97,3 +97,68 @@ export function someBlock(stats: Stat[], predicate: (e: Expr) => boolean): boole
 }
 
 export const isCallExpr = (e: Expr): boolean => e.type === "CallExpr" || e.type === "MethodCallExpr";
+
+// Every name the program binds or reads, so a pass that synthesizes a local
+// can pick a name that shadows nothing. Member names and table keys are
+// excluded on purpose: they live in a different namespace and can never be
+// captured by a local declaration.
+export function collectNames(stats: Stat[], into = new Set<string>()): Set<string> {
+  // someStat/someExpr already reach every expression in the subtree,
+  // including nested function bodies, so one sweep covers all references
+  // and every parameter name.
+  const record = (e: Expr) => {
+    if (e.type === "Identifier") into.add(e.name);
+    else if (e.type === "FunctionExpr") {
+      for (const param of e.params) into.add(param.name);
+      for (const nested of e.body) collectDeclaredNames(nested, into);
+    }
+    return false;
+  };
+  for (const stat of stats) {
+    someStat(stat, record);
+    collectDeclaredNames(stat, into);
+  }
+  return into;
+}
+
+// Declaration names are the one thing someStat cannot see, since they are
+// plain strings on the statement rather than Identifier expressions.
+function collectDeclaredNames(stat: Stat, into: Set<string>) {
+  const blocks: Stat[][] = [];
+  switch (stat.type) {
+    case "LocalStat":
+      for (const name of stat.names) into.add(name.name);
+      break;
+    case "LocalFunctionStat":
+      into.add(stat.name);
+      for (const param of stat.func.params) into.add(param.name);
+      blocks.push(stat.func.body);
+      break;
+    case "FunctionDeclStat":
+      for (const param of stat.func.params) into.add(param.name);
+      blocks.push(stat.func.body);
+      break;
+    case "NumericForStat":
+      into.add(stat.varName);
+      blocks.push(stat.body);
+      break;
+    case "GenericForStat":
+      for (const name of stat.names) into.add(name);
+      blocks.push(stat.body);
+      break;
+    case "DoStat":
+    case "WhileStat":
+    case "RepeatStat":
+      blocks.push(stat.body);
+      break;
+    case "IfStat":
+      for (const clause of stat.clauses) blocks.push(clause.body);
+      if (stat.elseBody) blocks.push(stat.elseBody);
+      break;
+    default:
+      break;
+  }
+  for (const block of blocks) {
+    for (const nested of block) collectDeclaredNames(nested, into);
+  }
+}

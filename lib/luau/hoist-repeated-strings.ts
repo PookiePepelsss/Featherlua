@@ -1,18 +1,38 @@
 import type { Chunk, Expr, Stat } from "./ast";
+import { collectNames } from "./ast-search";
 
-export function hoistRepeatedStrings(chunk: Chunk): boolean {
+// Names already bound or read anywhere in the chunk. A synthesized local
+// that reuses one of them would be shadowed by the user's own declaration
+// (or shadow a global they read), silently rebinding every site this pass
+// rewrote, so every hoist name is checked against this set.
+let takenNames = new Set<string>();
+let renameWillRun = false;
+
+export function hoistRepeatedStrings(chunk: Chunk, willRename: boolean): boolean {
+  takenNames = collectNames(chunk.body);
+  renameWillRun = willRename;
   const changedRef = { value: false };
   chunk.body = processScope(chunk.body, changedRef);
   return changedRef.value;
 }
 
-const ASSUMED_NAME_LENGTH = 7;
+// `local ` plus `=`. The name itself is counted separately because its
+// length depends on whether the renamer runs afterwards.
 const DECL_OVERHEAD = 7;
 
-export function stringLocalIsWorthKeeping(raw: string, count: number): boolean {
+// With renaming on, a hoisted local ends up in the renamer's `a`..`zz`
+// pool, so budget 2 characters rather than the 7 of `__strNN`. Assuming 7
+// unconditionally made the pass reject hoists that were in fact a clear
+// win once the name shrank.
+function assumedNameLength(willRename: boolean) {
+  return willRename ? 2 : 7;
+}
+
+export function stringLocalIsWorthKeeping(raw: string, count: number, willRename: boolean): boolean {
   if (count < 3) return false;
+  const nameLength = assumedNameLength(willRename);
   const originalCost = count * raw.length;
-  const newCost = count * ASSUMED_NAME_LENGTH + (DECL_OVERHEAD + ASSUMED_NAME_LENGTH + raw.length);
+  const newCost = count * nameLength + (DECL_OVERHEAD + nameLength + raw.length);
   return newCost < originalCost;
 }
 
@@ -22,6 +42,17 @@ export function resetStringHoistCounter(): void {
   stringHoistCounter = 0;
 }
 
+function nextHoistName(): string {
+  for (;;) {
+    stringHoistCounter += 1;
+    const candidate = `__str${stringHoistCounter}`;
+    if (!takenNames.has(candidate)) {
+      takenNames.add(candidate);
+      return candidate;
+    }
+  }
+}
+
 function processScope(stats: Stat[], changedRef: { value: boolean }): Stat[] {
   const counts = new Map<string, number>();
   const templatesByRaw = new Map<string, Expr>();
@@ -29,9 +60,8 @@ function processScope(stats: Stat[], changedRef: { value: boolean }): Stat[] {
 
   const hoistNames = new Map<string, string>();
   for (const [raw, count] of counts) {
-    if (!stringLocalIsWorthKeeping(raw, count)) continue;
-    stringHoistCounter += 1;
-    hoistNames.set(raw, `__str${stringHoistCounter}`);
+    if (!stringLocalIsWorthKeeping(raw, count, renameWillRun)) continue;
+    hoistNames.set(raw, nextHoistName());
   }
   if (hoistNames.size === 0) return stats;
 
