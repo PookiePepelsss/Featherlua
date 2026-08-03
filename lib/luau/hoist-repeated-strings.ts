@@ -1,5 +1,6 @@
 import type { Chunk, Expr, Stat } from "./ast";
 import { collectNames } from "./ast-search";
+import { LOCAL_REGISTER_LIMIT } from "./alias-globals";
 
 // Names already bound or read anywhere in the chunk. A synthesized local
 // that reuses one of them would be shadowed by the user's own declaration
@@ -78,10 +79,17 @@ function processScope(stats: Stat[], changedRef: { value: boolean }): Stat[] {
   const templatesByRaw = new Map<string, Expr>();
   countBlock(stats, counts, templatesByRaw, changedRef);
 
+  // Luau allocates one register per local per function and caps it at 200.
+  // Synthesized declarations have to fit in what this scope has not already
+  // spent, or the output stops compiling on exactly the large scripts the
+  // pass is meant to help.
+  let budget = LOCAL_REGISTER_LIMIT - countLocals(stats);
   const hoistNames = new Map<string, string>();
   for (const [raw, use] of counts) {
+    if (budget <= 0) break;
     if (!stringLocalIsWorthKeeping(raw, use.total, renameWillRun, use.sugar)) continue;
     hoistNames.set(raw, nextHoistName());
+    budget -= 1;
   }
   if (hoistNames.size === 0) return stats;
 
@@ -95,6 +103,15 @@ function processScope(stats: Stat[], changedRef: { value: boolean }): Stat[] {
     newLocals.push({ type: "LocalStat", names: [{ name, synthetic: true }], init: [init] });
   }
   return [...newLocals, ...stats];
+}
+
+function countLocals(stats: Stat[]): number {
+  let used = 0;
+  for (const stat of stats) {
+    if (stat.type === "LocalStat") used += stat.names.length;
+    else if (stat.type === "LocalFunctionStat") used += 1;
+  }
+  return used;
 }
 
 function countBlock(

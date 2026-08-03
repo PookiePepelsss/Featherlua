@@ -102,6 +102,38 @@ export const isCallExpr = (e: Expr): boolean => e.type === "CallExpr" || e.type 
 // can pick a name that shadows nothing. Member names and table keys are
 // excluded on purpose: they live in a different namespace and can never be
 // captured by a local declaration.
+// Visits every statement in the subtree, including ones inside function
+// bodies that hang off expressions. someStat only ever hands back
+// expressions, so passes that need statement-level context use this.
+export function forEachStat(stats: Stat[], fn: (stat: Stat) => void) {
+  for (const stat of stats) {
+    fn(stat);
+    someStat(stat, (e) => {
+      if (e.type === "FunctionExpr") forEachStat(e.body, fn);
+      return false;
+    });
+    switch (stat.type) {
+      case "LocalFunctionStat":
+      case "FunctionDeclStat":
+        forEachStat(stat.func.body, fn);
+        break;
+      case "DoStat":
+      case "WhileStat":
+      case "RepeatStat":
+      case "NumericForStat":
+      case "GenericForStat":
+        forEachStat(stat.body, fn);
+        break;
+      case "IfStat":
+        for (const clause of stat.clauses) forEachStat(clause.body, fn);
+        if (stat.elseBody) forEachStat(stat.elseBody, fn);
+        break;
+      default:
+        break;
+    }
+  }
+}
+
 export function collectNames(stats: Stat[], into = new Set<string>()): Set<string> {
   // someStat/someExpr already reach every expression in the subtree,
   // including nested function bodies, so one sweep covers all references

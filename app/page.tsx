@@ -21,6 +21,7 @@ const optionLabels: Array<[keyof AggressiveOptions, string]> = [
   ["mergeAdjacentLocals", "Merge adjacent locals"],
   ["mergeAdjacentAssigns", "Merge adjacent assigns"],
   ["hoistRepeatedStrings", "Dedupe repeated strings"],
+  ["aliasGlobals", "Alias repeated globals"],
 ];
 
 const bytes = (text: string) => new TextEncoder().encode(text).length;

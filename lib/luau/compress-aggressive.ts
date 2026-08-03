@@ -13,6 +13,7 @@ import { removeUnusedLocals } from "./remove-unused-locals";
 import { hoistRepeatedStrings, resetStringHoistCounter } from "./hoist-repeated-strings";
 import { mergeAdjacentLocals } from "./merge-adjacent-locals";
 import { mergeAdjacentAssigns } from "./merge-adjacent-assigns";
+import { aliasGlobals } from "./alias-globals";
 import { detectReflectionUsage, type ReflectionRisk } from "./reflection-risks";
 
 export type CompressResult =
@@ -28,6 +29,7 @@ export interface AggressiveOptions {
   mergeAdjacentAssigns: boolean;
   hoistRepeatedStrings: boolean;
   stripTypes: boolean;
+  aliasGlobals: boolean;
 }
 
 export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
@@ -39,6 +41,9 @@ export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   mergeAdjacentLocals: true,
   mergeAdjacentAssigns: true,
   hoistRepeatedStrings: true,
+  // Opt-in: an alias freezes the global's value at chunk start, which is
+  // wrong for any script whose globals are swapped or hooked later.
+  aliasGlobals: false,
 };
 
 function parseError(message: string, line = 0, col = 0): CompressResult {
@@ -70,6 +75,7 @@ export function transformForAggressive(
       if (options.foldConstants) optimize(resolved.chunk);
     }
   }
+  if (options.aliasGlobals) aliasGlobals(resolved, options.rename);
   if (options.mergeAdjacentLocals) mergeAdjacentLocals(resolved);
   if (options.mergeAdjacentAssigns) mergeAdjacentAssigns(resolved);
   // The scope tree above still lists locals the passes since deleted, and
@@ -87,6 +93,7 @@ const OPTION_LABELS: Partial<Record<keyof AggressiveOptions, string>> = {
   mergeAdjacentLocals: "Merge adjacent locals",
   mergeAdjacentAssigns: "Merge adjacent assigns",
   hoistRepeatedStrings: "Dedupe repeated strings",
+  aliasGlobals: "Alias repeated globals",
 };
 
 const RISK_OPTIONS: Record<Exclude<ReflectionRisk, "bytecode">, readonly (keyof AggressiveOptions)[]> = {
@@ -97,6 +104,7 @@ const RISK_OPTIONS: Record<Exclude<ReflectionRisk, "bytecode">, readonly (keyof 
     "removeUnusedLocals",
     "mergeAdjacentLocals",
     "hoistRepeatedStrings",
+    "aliasGlobals",
   ],
   constants: [
     "foldConstants",
