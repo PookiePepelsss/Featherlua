@@ -1,4 +1,4 @@
-import type { Chunk, Expr, Stat } from "./ast";
+import type { Chunk, DoStat, Expr, Stat } from "./ast";
 import { KEYWORDS } from "./tokens";
 
 // Luau reads hex and binary literals into a 64-bit unsigned integer, which
@@ -366,10 +366,36 @@ function optimizeBlock(stats: Stat[]): Stat[] {
   for (let i = 0; i < stats.length; i += 1) {
     const result = optimizeStat(stats[i]);
     if (!result) continue;
-    kept.push(result);
+    if (result.type === "DoStat" && canInlineDoBlock(result, i === stats.length - 1)) {
+      kept.push(...result.body);
+    } else {
+      kept.push(result);
+    }
     if (isTerminator(result) && !hasTopLevelLabel(stats.slice(i + 1))) break;
   }
   return kept;
+}
+
+// A `do ... end` exists only to bound a scope, so one that declares nothing
+// is six characters of nothing. Most of these are left behind by branch
+// elimination (`if true then f() end` becomes `do f() end`) rather than
+// written by hand. A trailing `return` is the one catch: it has to be the
+// last statement of its block, so inlining it into the middle of the parent
+// would not parse.
+function canInlineDoBlock(stat: DoStat, isLastInParent: boolean): boolean {
+  if (declaresNames(stat.body) || containsLabel(stat.body)) return false;
+  const last = stat.body[stat.body.length - 1];
+  if (last?.type === "ReturnStat" && !isLastInParent) return false;
+  return true;
+}
+
+function declaresNames(stats: Stat[]): boolean {
+  return stats.some(
+    (stat) =>
+      stat.type === "LocalStat" ||
+      stat.type === "LocalFunctionStat" ||
+      stat.type === "TypeAliasStat",
+  );
 }
 
 function optimizeStat(stat: Stat): Stat | undefined {

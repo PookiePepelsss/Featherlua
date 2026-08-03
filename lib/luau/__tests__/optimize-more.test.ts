@@ -161,12 +161,12 @@ describe("optimize: string literal concatenation", () => {
 });
 
 describe("optimize: folded literal-condition comparisons feed dead-branch elimination", () => {
-  it("`if 1 < 2 then` becomes `do...end`", () => {
-    expect(output("if 1 < 2 then print(1) end")).toBe("do print(1)end");
+  it("`if 1 < 2 then` reduces to its branch body", () => {
+    expect(output("if 1 < 2 then print(1) end")).toBe("print(1)");
   });
 
   it("propagated + compared: `local MAX = 10; if MAX > 5 then ... end` eliminates fully", () => {
-    expect(output("local MAX = 10\nif MAX > 5 then print(1) end")).toBe("do print(1)end");
+    expect(output("local MAX = 10\nif MAX > 5 then print(1) end")).toBe("print(1)");
   });
 
   it("output remains valid, re-parseable Luau after all new folds combined", () => {

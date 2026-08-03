@@ -28,11 +28,25 @@ function assumedNameLength(willRename: boolean) {
   return willRename ? 2 : 7;
 }
 
-export function stringLocalIsWorthKeeping(raw: string, count: number, willRename: boolean): boolean {
+// `f"str"` needs no parentheses, but `f(name)` does, so every occurrence
+// that was the sole argument of a call costs two extra characters once it
+// becomes an identifier. Ignoring that made the pass hoist strings whose
+// call sites were cheaper left alone.
+const CALL_SUGAR_PENALTY = 2;
+
+export function stringLocalIsWorthKeeping(
+  raw: string,
+  count: number,
+  willRename: boolean,
+  sugarCount = 0,
+): boolean {
   if (count < 3) return false;
   const nameLength = assumedNameLength(willRename);
   const originalCost = count * raw.length;
-  const newCost = count * nameLength + (DECL_OVERHEAD + nameLength + raw.length);
+  const newCost =
+    count * nameLength +
+    sugarCount * CALL_SUGAR_PENALTY +
+    (DECL_OVERHEAD + nameLength + raw.length);
   return newCost < originalCost;
 }
 
@@ -53,14 +67,20 @@ function nextHoistName(): string {
   }
 }
 
+interface StringUse {
+  total: number;
+  // Occurrences written as `f"str"`, which regain parentheses when hoisted.
+  sugar: number;
+}
+
 function processScope(stats: Stat[], changedRef: { value: boolean }): Stat[] {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, StringUse>();
   const templatesByRaw = new Map<string, Expr>();
   countBlock(stats, counts, templatesByRaw, changedRef);
 
   const hoistNames = new Map<string, string>();
-  for (const [raw, count] of counts) {
-    if (!stringLocalIsWorthKeeping(raw, count, renameWillRun)) continue;
+  for (const [raw, use] of counts) {
+    if (!stringLocalIsWorthKeeping(raw, use.total, renameWillRun, use.sugar)) continue;
     hoistNames.set(raw, nextHoistName());
   }
   if (hoistNames.size === 0) return stats;
@@ -79,22 +99,25 @@ function processScope(stats: Stat[], changedRef: { value: boolean }): Stat[] {
 
 function countBlock(
   stats: Stat[],
-  counts: Map<string, number>,
+  counts: Map<string, StringUse>,
   templates: Map<string, Expr>,
   changedRef: { value: boolean },
 ) {
   for (const stat of stats) countStat(stat, counts, templates, changedRef);
 }
 
-function bump(expr: Expr, counts: Map<string, number>, templates: Map<string, Expr>) {
+function bump(expr: Expr, counts: Map<string, StringUse>, templates: Map<string, Expr>, sugar = false) {
   if (expr.type !== "StringExpr") return;
-  counts.set(expr.raw, (counts.get(expr.raw) ?? 0) + 1);
+  const use = counts.get(expr.raw) ?? { total: 0, sugar: 0 };
+  use.total += 1;
+  if (sugar) use.sugar += 1;
+  counts.set(expr.raw, use);
   if (!templates.has(expr.raw)) templates.set(expr.raw, expr);
 }
 
 function countStat(
   stat: Stat,
-  counts: Map<string, number>,
+  counts: Map<string, StringUse>,
   templates: Map<string, Expr>,
   changedRef: { value: boolean },
 ) {
@@ -157,9 +180,24 @@ function countStat(
   }
 }
 
+// A single string argument is printed without parentheses, so it is the one
+// position where replacing the literal with a name costs more than the name.
+function visitArgs(
+  args: Expr[],
+  counts: Map<string, StringUse>,
+  templates: Map<string, Expr>,
+  changedRef: { value: boolean },
+) {
+  if (args.length === 1 && args[0].type === "StringExpr") {
+    bump(args[0], counts, templates, true);
+    return;
+  }
+  for (const arg of args) countExpr(arg, counts, templates, changedRef);
+}
+
 function countExpr(
   expr: Expr,
-  counts: Map<string, number>,
+  counts: Map<string, StringUse>,
   templates: Map<string, Expr>,
   changedRef: { value: boolean },
 ) {
@@ -180,11 +218,11 @@ function countExpr(
       return;
     case "CallExpr":
       visit(expr.callee);
-      expr.args.forEach(visit);
+      visitArgs(expr.args, counts, templates, changedRef);
       return;
     case "MethodCallExpr":
       visit(expr.object);
-      expr.args.forEach(visit);
+      visitArgs(expr.args, counts, templates, changedRef);
       return;
     case "FunctionExpr":
       expr.body = processScope(expr.body, changedRef);

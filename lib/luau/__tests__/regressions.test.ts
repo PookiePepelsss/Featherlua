@@ -27,18 +27,20 @@ describe("regression: parens around a non-prefixexp base must survive", () => {
   });
 
   it("immediately-invoked parenthesized function expression", () => {
-    const result = compressAggressive("local x = (function() return 1 end)()");
+    // `x` is returned so the unused-local rewrite leaves the declaration
+    // alone; the parens around the callee are what this case is about.
+    const result = compressAggressive("local x = (function() return 1 end)() return x");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toBe("local a=(function()return 1 end)()");
+    expect(result.output).toBe("local a=(function()return 1 end)()return a");
     assertValidRoundtrip(result.output);
   });
 
   it("method call on a parenthesized string literal", () => {
-    const result = compressAggressive('local x = ("text"):sub(1)');
+    const result = compressAggressive('local x = ("text"):sub(1) return x');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toBe('local a=("text"):sub(1)');
+    expect(result.output).toBe('local a=("text"):sub(1)return a');
     assertValidRoundtrip(result.output);
   });
 

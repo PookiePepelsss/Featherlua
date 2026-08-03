@@ -92,7 +92,7 @@ describe("optimize: literal-condition branch elimination", () => {
     const result = compressAggressive("if true then print(1) end");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toBe("do print(1)end");
+    expect(result.output).toBe("print(1)");
   });
 
   it("`if false then A end` (no else) is removed entirely", () => {
@@ -106,7 +106,7 @@ describe("optimize: literal-condition branch elimination", () => {
     const result = compressAggressive("if false then print(1) else print(2) end");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toBe("do print(2)end");
+    expect(result.output).toBe("print(2)");
   });
 
   it("does not eliminate a multi-clause if (elseif present)", () => {

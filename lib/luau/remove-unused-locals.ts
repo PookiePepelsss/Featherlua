@@ -1,6 +1,7 @@
 import type { Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 import { isRemovableInitializer } from "./effect-analysis";
+import { isCallExpr } from "./ast-search";
 
 export function removeUnusedLocals(resolved: ResolvedProgram, pinnedNames?: Set<string>): boolean {
   const refCounts = new Map<number, number>();
@@ -164,10 +165,36 @@ function stripUnused(stats: Stat[], counts: Map<number, number>, onChange: () =>
       onChange();
       continue;
     }
+    const asCalls = unusedLocalAsCalls(stat, counts);
+    if (asCalls) {
+      onChange();
+      for (const call of asCalls) {
+        stripUnusedInStat(call, counts, onChange);
+        kept.push(call);
+      }
+      continue;
+    }
     stripUnusedInStat(stat, counts, onChange);
     kept.push(stat);
   }
   return kept;
+}
+
+// `local unused = f()` still has to call `f`, but it does not have to keep
+// the binding: as a bare `f()` statement the call happens, its results are
+// discarded, and the declaration is gone. Only applies when every name in
+// the statement is dead and every initializer is either a call or something
+// with no effect at all, so nothing that could run is dropped and nothing
+// that could not be a statement is promoted to one.
+function unusedLocalAsCalls(stat: Stat, counts: Map<number, number>): Stat[] | undefined {
+  if (stat.type !== "LocalStat" || stat.init.length === 0) return undefined;
+  if (stat.names.some((name) => name.attrib !== undefined)) return undefined;
+  if (!stat.names.every((name) => isUnused(name.symbolId, counts))) return undefined;
+  if (!stat.init.every((init) => isCallExpr(init) || isRemovableInitializer(init))) return undefined;
+
+  const calls = stat.init.filter(isCallExpr);
+  if (calls.length === 0) return undefined; // handled by isUnusedLocal when it applies
+  return calls.map((call) => ({ type: "CallStat", call } as Stat));
 }
 
 function isUnused(symbolId: number | undefined, counts: Map<number, number>): boolean {

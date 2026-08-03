@@ -19,7 +19,7 @@ describe("constant propagation: the motivating case", () => {
   });
 
   it("a `local DEBUG = true` flag keeps its guarded branch, unconditionally", () => {
-    expect(output("local DEBUG = true\nif DEBUG then print(1) end")).toBe("do print(1)end");
+    expect(output("local DEBUG = true\nif DEBUG then print(1) end")).toBe("print(1)");
   });
 
   it("propagates through a chain over multiple iterations (a -> b -> use)", () => {
@@ -80,9 +80,9 @@ describe("constant propagation: safety boundaries", () => {
     const result = compressAggressive(source);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // The inner `do...end` wrapper survives (only eliminated if-branches
-    // lose theirs); each `x` correctly propagates its own scope's value.
-    expect(result.output).toBe("do print(2)end print(1)");
+    // The wrapper the eliminated branch left behind declares nothing, so it
+    // is inlined; each `x` still correctly propagated its own scope's value.
+    expect(result.output).toBe("print(2)print(1)");
   });
 });
 
