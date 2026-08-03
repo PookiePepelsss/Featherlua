@@ -206,3 +206,36 @@ describe("trust regressions: reflection warnings do not change selected options"
     expect(result.warning).toBeUndefined();
   });
 });
+
+describe("renamer: eliminated locals do not reserve short names", () => {
+  it("nested scopes still get single-character names after many locals are removed", () => {
+    const dead = Array.from({ length: 45 }, (_, index) => `local dead${index} = ${index}`).join("\n");
+    const live = Array.from({ length: 10 }, (_, index) => `local live${index} = tostring(${index})`).join("\n");
+    const uses = Array.from({ length: 10 }, (_, index) => `live${index}`).join(",");
+    const source =
+      `${dead}\n${live}\n` +
+      "local function nested(p1,p2,p3,p4,p5)\n local n1,n2,n3 = p1,p2,p3\n return n1..n2..n3..p4..p5\nend\n" +
+      `print(${uses},nested("a","b","c","d","e"))`;
+
+    const result = compressAggressive(source);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const params = /function \w+\(([^)]*)\)/.exec(result.output);
+    expect(params).not.toBeNull();
+    for (const name of params![1].split(",")) expect(name.length).toBe(1);
+  });
+
+  it("reaches a fixed point in a single pass", () => {
+    const source =
+      "local unusedA = 1\nlocal unusedB = 2\nlocal kept = tostring(3)\n" +
+      "local function inner(a, b) local c = a .. b return c end\n" +
+      "print(kept, inner('x', 'y'))";
+    const first = compressAggressive(source);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const second = compressAggressive(first.output);
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.output).toBe(first.output);
+  });
+});

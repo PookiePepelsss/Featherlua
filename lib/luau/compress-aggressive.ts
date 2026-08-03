@@ -61,7 +61,11 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
   }
   if (options.mergeAdjacentLocals) mergeAdjacentLocals(resolved);
   if (options.mergeAdjacentAssigns) mergeAdjacentAssigns(resolved);
-  return resolved;
+  // The scope tree above still lists locals the passes since deleted, and
+  // the renamer allocates a short name per entry, so dead symbols would
+  // burn `a`, `b`, ... and push real ones onto longer names. Re-resolving
+  // gives the renamer only what survived.
+  return resolveScopes(resolved.chunk);
 }
 
 const OPTION_LABELS: Partial<Record<keyof AggressiveOptions, string>> = {
