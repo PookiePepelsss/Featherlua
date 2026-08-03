@@ -1,4 +1,4 @@
-import type { Chunk, DoStat, Expr, Stat } from "./ast";
+import type { Chunk, CompoundAssignStat, DoStat, Expr, Stat } from "./ast";
 import { KEYWORDS } from "./tokens";
 
 // Luau reads hex and binary literals into a 64-bit unsigned integer, which
@@ -55,6 +55,126 @@ function canonicalizeNumber(raw: string): string {
   if (value === undefined || !Number.isFinite(value) || Object.is(value, -0)) return raw;
   const formatted = formatLuauNumber(value);
   return formatted.length < raw.length ? formatted : raw;
+}
+
+
+// Splits a quoted literal's body into pieces, keeping every escape verbatim
+// except `\"` and `'`, which are unescaped so the delimiter choice below
+// can re-escape only the one it actually needs. Returns undefined for
+// anything it cannot account for exactly, so the literal is left alone.
+function stringPieces(body: string): string[] | undefined {
+  const pieces: string[] = [];
+  let i = 0;
+  while (i < body.length) {
+    const ch = body[i];
+    if (ch !== "\\") {
+      pieces.push(ch);
+      i += 1;
+      continue;
+    }
+    const next = body[i + 1];
+    if (next === undefined) return undefined;
+    if (next === '"' || next === "'") {
+      pieces.push(next);
+      i += 2;
+      continue;
+    }
+    if (next === "x") {
+      pieces.push(body.slice(i, i + 4));
+      i += 4;
+      continue;
+    }
+    if (next === "u" && body[i + 2] === "{") {
+      const close = body.indexOf("}", i + 3);
+      if (close === -1) return undefined;
+      pieces.push(body.slice(i, close + 1));
+      i = close + 1;
+      continue;
+    }
+    if (/[0-9]/.test(next)) {
+      let digits = 1;
+      while (digits < 3 && /[0-9]/.test(body[i + 1 + digits] ?? "")) digits += 1;
+      pieces.push(body.slice(i, i + 1 + digits));
+      i += 1 + digits;
+      continue;
+    }
+    if (next === "z") {
+      let end = i + 2;
+      while (/\s/u.test(body[end] ?? "")) end += 1;
+      pieces.push(body.slice(i, end));
+      i = end;
+      continue;
+    }
+    pieces.push(body.slice(i, i + 2));
+    i += 2;
+  }
+  return pieces;
+}
+
+// Picks whichever delimiter needs fewer escapes. `'it's'` and `"it's"` hold
+// the same bytes; the second is two characters shorter.
+function canonicalizeString(raw: string): string {
+  const quote = raw[0];
+  if (quote !== '"' && quote !== "'") return raw;
+  const pieces = stringPieces(raw.slice(1, -1));
+  if (!pieces) return raw;
+
+  let best = raw;
+  for (const delimiter of ['"', "'"]) {
+    const body = pieces
+      .map((piece) => (piece === delimiter ? "\\" + delimiter : piece))
+      .join("");
+    const candidate = `${delimiter}${body}${delimiter}`;
+    if (candidate.length < best.length) best = candidate;
+  }
+  return best;
+}
+
+
+// `not (a == b)` and `a ~= b` are the same operation in Lua, `~=` being
+// defined as the negation of `==` including the `__eq` metamethod. Only the
+// two equality operators qualify: `not (a < b)` is not `a >= b` once NaN or
+// a `__lt` metamethod is involved.
+function foldNegatedComparison(expr: Expr): Expr | undefined {
+  if (expr.type !== "UnaryExpr" || expr.operator !== "not") return undefined;
+  const inner = expr.operand.type === "ParenExpr" ? expr.operand.expr : expr.operand;
+  if (inner.type !== "BinaryExpr") return undefined;
+  if (inner.operator !== "==" && inner.operator !== "~=") return undefined;
+  return { ...inner, operator: inner.operator === "==" ? "~=" : "==" };
+}
+
+// `a = a + 1` is `a += 1` with two characters fewer. The target has to be
+// re-readable without side effects, so only a plain local/global or a chain
+// of member accesses on one qualifies: rewriting `t[f()].n = t[f()].n + 1`
+// would drop a call, and an index expression could run `__index` a
+// different number of times.
+function stableAssignTarget(expr: Expr): string | undefined {
+  if (expr.type === "Identifier") return expr.symbolId !== undefined ? `s${expr.symbolId}` : `g:${expr.name}`;
+  if (expr.type === "MemberExpr") {
+    const base = stableAssignTarget(expr.object);
+    return base === undefined ? undefined : `${base}.${expr.name}`;
+  }
+  return undefined;
+}
+
+const COMPOUNDABLE = new Set(["+", "-", "*", "/", "//", "%", "^", ".."]);
+
+function toCompoundAssign(stat: Stat): Stat | undefined {
+  if (stat.type !== "AssignStat" || stat.targets.length !== 1 || stat.values.length !== 1) return undefined;
+  const target = stat.targets[0];
+  const value = stat.values[0];
+  if (value.type !== "BinaryExpr" || !COMPOUNDABLE.has(value.operator)) return undefined;
+  // Only the left operand may be folded away: `a = 1 - a` is not `a -= 1`,
+  // and even for commutative operators a metamethod can tell the operands
+  // apart.
+  const targetId = stableAssignTarget(target);
+  if (targetId === undefined || stableAssignTarget(value.left) !== targetId) return undefined;
+  return {
+    type: "CompoundAssignStat",
+    operator: `${value.operator}=` as CompoundAssignStat["operator"],
+    target,
+    value: value.right,
+  };
 }
 
 const SIMPLE_STRING_INDEX_RE = /^(["'])([A-Za-z_][A-Za-z0-9_]*)\1$/;
@@ -195,8 +315,10 @@ function foldExpr(expr: Expr): Expr {
     case "TrueExpr":
     case "FalseExpr":
     case "VarargExpr":
-    case "StringExpr":
     case "Identifier":
+      return expr;
+    case "StringExpr":
+      expr.raw = canonicalizeString(expr.raw);
       return expr;
     case "NumberExpr":
       expr.raw = canonicalizeNumber(expr.raw);
@@ -240,6 +362,8 @@ function foldExpr(expr: Expr): Expr {
       });
       return expr;
     case "UnaryExpr": {
+      const negated = foldNegatedComparison(expr);
+      if (negated) return foldExpr(negated);
       expr.operand = foldExpr(expr.operand);
       if (expr.operator === "-") {
         const v = asNumberLiteral(expr.operand);
@@ -437,10 +561,11 @@ function optimizeStat(stat: Stat): Stat | undefined {
       stat.target.base = foldExpr(stat.target.base);
       stat.func.body = optimizeBlock(stat.func.body);
       return stat;
-    case "AssignStat":
+    case "AssignStat": {
       stat.targets = stat.targets.map((t) => foldExpr(t) as typeof t);
       stat.values = stat.values.map(foldExpr);
-      return stat;
+      return toCompoundAssign(stat) ?? stat;
+    }
     case "CompoundAssignStat":
       stat.target = foldExpr(stat.target) as typeof stat.target;
       stat.value = foldExpr(stat.value);
