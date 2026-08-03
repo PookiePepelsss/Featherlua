@@ -227,4 +227,66 @@ export const executorScenarios: ExecutorScenario[] = [
     globals: ["create_signal", "print"],
     members: ["Connect", "Fire", "Disconnect", "Destroy"],
   },
+  {
+    name: "varargs forwarded through a hook chain",
+    source: 'local old\nold=hookfunction(target,newcclosure(function(...)local n=select("#",...)local a,b,c=...\nprint(n,a,b,c)return old(...)end))\nold(1,nil,"three")',
+    globals: ["hookfunction", "target", "newcclosure", "select", "print"],
+  },
+  {
+    name: "nil holes preserved in remote arguments",
+    source: 'local payload={1,nil,3}\nlocal n=select("#",1,nil,3)\nfiresignal(button.Event,1,nil,3)\nprint(n,#payload,payload[1],payload[3])',
+    globals: ["select", "firesignal", "button", "print"],
+  },
+  {
+    name: "method vs dot call on the same object",
+    source: 'local obj={value=7}\nfunction obj:getSelf()return self.value end\nfunction obj.getPlain(v)return v end\nprint(obj:getSelf(),obj.getPlain(9))',
+    globals: ["print"],
+    members: ["getSelf", "getPlain", "value"],
+  },
+  {
+    name: "closure captures loop variable per iteration",
+    source: 'local fns={}\nfor i=1,3 do fns[i]=function()return i end end\nprint(fns[1](),fns[2](),fns[3]())',
+    globals: ["print"],
+  },
+  {
+    name: "upvalue shared between two closures",
+    source: 'local function counter()local n=0\nreturn function()n=n+1 return n end,function()return n end end\nlocal inc,get=counter()\ninc()inc()\nprint(get())',
+    globals: ["print"],
+  },
+  {
+    name: "string escapes survive compression",
+    source: 'local quote="say \\"hi\\""\nlocal tab="a\\tb"\nlocal newline="l1\\nl2"\nlocal decimal="\\65\\66"\nprint(quote,tab,newline,decimal,#decimal)',
+    globals: ["print"],
+  },
+  {
+    name: "numeric edge values",
+    source: 'local hex=0xFF\nlocal exp=1e3\nlocal frac=0.5\nlocal neg=-0.25\nlocal big=1e15\nprint(hex,exp,frac,neg,big,hex+exp)',
+    globals: ["print"],
+  },
+  {
+    name: "pcall captures error message",
+    source: 'local ok,err=pcall(function()error("boom")end)\nlocal ok2,err2=pcall(function()error({code=7})end)\nprint(ok,tostring(err):match("boom")~=nil,ok2,type(err2))',
+    globals: ["pcall", "error", "print", "tostring", "type"],
+  },
+  {
+    name: "table with mixed array and hash parts",
+    source: 'local t={1,2,3,name="mixed",[10]=true}\nlocal count=0\nfor k,v in pairs(t)do count=count+1 end\nprint(#t,t.name,t[10],count)',
+    globals: ["pairs", "print"],
+  },
+  {
+    name: "nested pcall and xpcall with a handler",
+    source: 'local ok,err=xpcall(function()error("inner")end,function(m)return "handled:"..tostring(m)end)\nlocal outer=pcall(function()return pcall(function()error("deep")end)end)\nprint(ok,tostring(err):match("handled")~=nil,outer)',
+    globals: ["xpcall", "error", "pcall", "print", "tostring"],
+  },
+  {
+    name: "table.unpack over an explicit range",
+    source: 'local t={10,20,30,40}\nlocal a,b=table.unpack(t,2,3)\nlocal n=select("#",table.unpack(t,1,4))\nprint(a,b,n)',
+    globals: ["table", "select", "print"],
+    members: ["unpack"],
+  },
+  {
+    name: "compound assignment operators",
+    source: 'local n=10\nn+=5\nn-=3\nn*=2\nn/=4\nlocal s="a"\ns..="b"\nprint(n,s)',
+    globals: ["print"],
+  },
 ];

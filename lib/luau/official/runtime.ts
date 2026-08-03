@@ -12,9 +12,15 @@ export interface CompileResult {
   error?: string;
 }
 
+export interface PrintedValue {
+  type: string;
+  value?: unknown;
+}
+
 export interface ExecuteResult {
   success: boolean;
   output: string;
+  prints?: PrintedValue[][];
   error?: string;
 }
 
