@@ -1,12 +1,25 @@
 import type { Chunk, Expr, Stat } from "./ast";
 import { KEYWORDS } from "./tokens";
 
+// Luau reads hex and binary literals into a 64-bit unsigned integer, which
+// saturates rather than growing: every literal past 2^64-1 becomes 2^64-1
+// and converts to the same double. Computing the exact mathematical value
+// instead would fold `0xDEADBEEFDEADBEEFDEADBEEF` to a number the runtime
+// never produces.
+const UINT64_SATURATED = Math.pow(2, 64);
+
+function saturatingInteger(digits: string, radix: number, maxDigits: number): number {
+  const significant = digits.replace(/^0+/, "");
+  return significant.length > maxDigits ? UINT64_SATURATED : parseInt(digits, radix);
+}
+
 export function parseLuauNumber(raw: string): number | undefined {
   const clean = raw.replace(/_/g, "");
   const hex = /^0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]*))?(?:[pP]([+-]?[0-9]+))?$/.exec(clean);
   if (hex) {
     const [, intPart, fracPart, expPart] = hex;
     if (!intPart && !fracPart) return undefined;
+    if (!fracPart && !expPart) return saturatingInteger(intPart, 16, 16);
     let mantissa = intPart ? parseInt(intPart, 16) : 0;
     if (fracPart) mantissa += parseInt(fracPart, 16) / Math.pow(16, fracPart.length);
     const exp = expPart ? parseInt(expPart, 10) : 0;
@@ -15,7 +28,7 @@ export function parseLuauNumber(raw: string): number | undefined {
   if (/^0[bB]/.test(clean)) {
     const digits = clean.slice(2);
     if (!/^[01]+$/.test(digits)) return undefined;
-    return parseInt(digits, 2);
+    return saturatingInteger(digits, 2, 64);
   }
   if (!/^(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(clean)) return undefined;
   return parseFloat(clean);
