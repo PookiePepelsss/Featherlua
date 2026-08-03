@@ -2,7 +2,7 @@ import type { Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 import { stringLocalIsWorthKeeping } from "./hoist-repeated-strings";
 
-export function propagateConstants(resolved: ResolvedProgram, willRename: boolean): boolean {
+export function propagateConstants(resolved: ResolvedProgram, willRename: boolean, pinnedNames?: Set<string>): boolean {
   const candidates = new Map<number, Expr>(); // symbolId -> literal to substitute
   const nameLengths = new Map<number, number>(); // symbolId -> original declared name's length
   const reassigned = new Set<number>();
@@ -13,6 +13,9 @@ export function propagateConstants(resolved: ResolvedProgram, willRename: boolea
   const eligible = new Map<number, Expr>();
   for (const [id, literal] of candidates) {
     if (reassigned.has(id)) continue;
+    // Substituting this away would delete a declaration a surviving type
+    // annotation still names.
+    if (pinnedNames?.size && pinnedNames.has(resolved.symbols.get(id)?.originalName ?? "")) continue;
     const refCount = refCounts.get(id) ?? 0;
     // Keep string hoisting and propagation from undoing each other.
     if (literal.type === "StringExpr" && stringLocalIsWorthKeeping(literal.raw, refCount, willRename)) continue;

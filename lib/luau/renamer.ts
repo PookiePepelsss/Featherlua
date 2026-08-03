@@ -186,9 +186,12 @@ function collectRenameStats(chunk: Chunk) {
 // collision-free by construction. compress-aggressive.ts's self-validation
 // (re-parse + alpha-equivalence check) is a backstop against any mistake
 // here, same as it would be for the simpler scheme.
-export function computeRenameMap(resolved: ResolvedProgram): Map<number, string> {
+export function computeRenameMap(resolved: ResolvedProgram, pinnedNames?: Set<string>): Map<number, string> {
   const { globals, references } = collectRenameStats(resolved.chunk);
-  const taken = new Set<string>([...KEYWORDS, ...SOFT_KEYWORDS, ...globals]);
+  // Type spans are reprinted verbatim, so a local a surviving annotation
+  // names has to keep that name, and no other local may be given it.
+  const pinned = pinnedNames ?? new Set<string>();
+  const taken = new Set<string>([...KEYWORDS, ...SOFT_KEYWORDS, ...globals, ...pinned]);
   const renameMap = new Map<number, string>();
 
   function nextFreeIndex(startIndex: number): { name: string; afterIndex: number } {
@@ -205,7 +208,7 @@ export function computeRenameMap(resolved: ResolvedProgram): Map<number, string>
     let index = baseIndex;
     const symbols = scope.declaredOrder
       .map((symbolId, order) => ({ symbolId, order, symbol: resolved.symbols.get(symbolId)! }))
-      .filter((entry) => entry.symbol.kind !== "self")
+      .filter((entry) => entry.symbol.kind !== "self" && !pinned.has(entry.symbol.originalName))
       .sort((a, b) => (references.get(b.symbolId) ?? 0) - (references.get(a.symbolId) ?? 0) || a.order - b.order);
 
     for (const { symbolId } of symbols) {

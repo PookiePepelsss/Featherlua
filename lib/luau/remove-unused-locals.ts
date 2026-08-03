@@ -2,9 +2,17 @@ import type { Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 import { isRemovableInitializer } from "./effect-analysis";
 
-export function removeUnusedLocals(resolved: ResolvedProgram): boolean {
+export function removeUnusedLocals(resolved: ResolvedProgram, pinnedNames?: Set<string>): boolean {
   const refCounts = new Map<number, number>();
   countReferences(resolved.chunk.body, refCounts);
+  // A local named by a surviving type annotation counts as referenced even
+  // when no expression reads it, so the annotation keeps pointing at a real
+  // declaration.
+  if (pinnedNames?.size) {
+    for (const [id, symbol] of resolved.symbols) {
+      if (pinnedNames.has(symbol.originalName)) refCounts.set(id, (refCounts.get(id) ?? 0) + 1);
+    }
+  }
 
   let changed = false;
   resolved.chunk.body = stripUnused(resolved.chunk.body, refCounts, () => {

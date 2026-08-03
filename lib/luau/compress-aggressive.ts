@@ -6,7 +6,7 @@ import type { ResolvedProgram } from "./scope-resolver";
 import type { Chunk } from "./ast";
 import { computeRenameMap } from "./renamer";
 import { structurallyEqual } from "./alpha-equivalence";
-import { stripTypeInfo } from "./strip-types";
+import { collectTypeSpanNames, stripTypeInfo } from "./strip-types";
 import { optimize } from "./optimize";
 import { propagateConstants } from "./constant-propagate";
 import { removeUnusedLocals } from "./remove-unused-locals";
@@ -45,7 +45,18 @@ function parseError(message: string, line = 0, col = 0): CompressResult {
   return { ok: false, error: { message, line, col } };
 }
 
-export function transformForAggressive(chunk: Chunk, options: AggressiveOptions = DEFAULT_AGGRESSIVE_OPTIONS): ResolvedProgram {
+// Annotations are reprinted verbatim, so when they survive, the locals they
+// name have to survive under those names too. With stripTypes on there is
+// nothing left to point at anything, so nothing is pinned.
+export function pinnedTypeNames(chunk: Chunk, options: AggressiveOptions): Set<string> | undefined {
+  return options.stripTypes ? undefined : collectTypeSpanNames(chunk);
+}
+
+export function transformForAggressive(
+  chunk: Chunk,
+  options: AggressiveOptions = DEFAULT_AGGRESSIVE_OPTIONS,
+  pinnedNames = pinnedTypeNames(chunk, options),
+): ResolvedProgram {
   if (options.stripTypes) stripTypeInfo(chunk);
   if (options.foldConstants) optimize(chunk);
   if (options.hoistRepeatedStrings) hoistRepeatedStrings(chunk, options.rename);
@@ -53,8 +64,8 @@ export function transformForAggressive(chunk: Chunk, options: AggressiveOptions 
   if (options.propagateConstants || options.removeUnusedLocals) {
     for (let i = 0; i < 20; i += 1) {
       let changed = false;
-      if (options.propagateConstants) changed = propagateConstants(resolved, options.rename) || changed;
-      if (options.removeUnusedLocals) changed = removeUnusedLocals(resolved) || changed;
+      if (options.propagateConstants) changed = propagateConstants(resolved, options.rename, pinnedNames) || changed;
+      if (options.removeUnusedLocals) changed = removeUnusedLocals(resolved, pinnedNames) || changed;
       if (!changed) break;
       if (options.foldConstants) optimize(resolved.chunk);
     }
@@ -153,8 +164,9 @@ function compressAggressiveCore(source: string, opts: AggressiveOptions): Compre
   }
 
   const { chunk, protectedComments } = parsed;
-  const resolved = transformForAggressive(chunk, opts);
-  const renameMap = opts.rename ? computeRenameMap(resolved) : undefined;
+  const pinnedNames = pinnedTypeNames(chunk, opts);
+  const resolved = transformForAggressive(chunk, opts, pinnedNames);
+  const renameMap = opts.rename ? computeRenameMap(resolved, pinnedNames) : undefined;
   const printed = print(chunk, renameMap);
 
   let reverified;

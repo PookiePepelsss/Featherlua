@@ -1,4 +1,4 @@
-import type { Chunk, Expr, FunctionExpr, Stat } from "./ast";
+import type { Chunk, Expr, FunctionExpr, Stat, TypeSpan } from "./ast";
 
 // Removes all type-annotation information from the AST: param/local type
 // annotations, function generics/return/vararg types, `type`/`export type`
@@ -11,14 +11,47 @@ import type { Chunk, Expr, FunctionExpr, Stat } from "./ast";
 // before printing, so the printer needs no awareness of this -- it already
 // only emits a type field when present.
 export function stripTypeInfo(chunk: Chunk): Chunk {
+  onSpan = () => undefined;
+  dropAliases = true;
   chunk.body = stripBlock(chunk.body);
   return chunk;
 }
 
+// Every name mentioned anywhere in a type annotation. When annotations are
+// being kept, a local named here has to keep both its name and its
+// declaration: type spans are reprinted verbatim, so renaming or deleting
+// the local it refers to leaves the annotation pointing at nothing. Types
+// are erased at runtime, so this costs nothing at the default settings
+// (where the annotations are gone anyway) and only applies when the user
+// asks to keep them.
+export function collectTypeSpanNames(chunk: Chunk): Set<string> {
+  const names = new Set<string>();
+  onSpan = (span) => {
+    if (span) for (const token of span.tokens) if (token.kind === "Name") names.add(token.text);
+    return span;
+  };
+  dropAliases = false;
+  stripBlock(chunk.body);
+  onSpan = () => undefined;
+  dropAliases = true;
+  return names;
+}
+
+// The walk below is shared: `stripTypeInfo` discards each span it reaches,
+// `collectTypeSpanNames` reads and returns it untouched.
+let onSpan: (span: TypeSpan | undefined) => TypeSpan | undefined = () => undefined;
+let dropAliases = true;
+
 function stripBlock(stats: Stat[]): Stat[] {
   const kept: Stat[] = [];
   for (const stat of stats) {
-    if (stat.type === "TypeAliasStat") continue; // zero runtime effect, drop entirely
+    if (stat.type === "TypeAliasStat") {
+      if (dropAliases) continue; // zero runtime effect, drop entirely
+      stat.generics = onSpan(stat.generics);
+      stat.definition = onSpan(stat.definition) ?? stat.definition;
+      kept.push(stat);
+      continue;
+    }
     stripStat(stat);
     kept.push(stat);
   }
@@ -26,17 +59,17 @@ function stripBlock(stats: Stat[]): Stat[] {
 }
 
 function stripFunctionExpr(func: FunctionExpr) {
-  func.generics = undefined;
-  func.returnType = undefined;
-  func.varargType = undefined;
-  for (const param of func.params) param.typeAnnotation = undefined;
+  func.generics = onSpan(func.generics);
+  func.returnType = onSpan(func.returnType);
+  func.varargType = onSpan(func.varargType);
+  for (const param of func.params) param.typeAnnotation = onSpan(param.typeAnnotation);
   func.body = stripBlock(func.body);
 }
 
 function stripStat(stat: Stat) {
   switch (stat.type) {
     case "LocalStat":
-      for (const name of stat.names) name.typeAnnotation = undefined;
+      for (const name of stat.names) name.typeAnnotation = onSpan(name.typeAnnotation);
       stat.init = stat.init.map(stripExpr);
       return;
     case "LocalFunctionStat":
@@ -146,6 +179,11 @@ function stripExpr(expr: Expr): Expr {
       // `(x :: number)` and `x` are runtime-identical -- the assertion is a
       // compile-time-only type-checker hint, not a runtime cast. Replace
       // the whole node with the (recursively stripped) inner expression.
+      if (!dropAliases) {
+        onSpan(expr.typeAnnotation);
+        expr.expr = stripExpr(expr.expr);
+        return expr;
+      }
       return stripExpr(expr.expr);
     case "IfExpr":
       expr.cond = stripExpr(expr.cond);
