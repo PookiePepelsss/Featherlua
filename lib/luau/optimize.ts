@@ -177,6 +177,74 @@ function toCompoundAssign(stat: Stat): Stat | undefined {
   };
 }
 
+// `[[abc]]` and `"abc"` hold the same bytes and the quoted form is two
+// characters shorter. Long brackets process no escapes at all, so this only
+// applies when nothing inside would need one: no backslash, no line break,
+// and at least one delimiter not occurring in the body.
+function longBracketToQuoted(raw: string): string | undefined {
+  const opener = /^\[(=*)\[/.exec(raw);
+  if (!opener) return undefined;
+  const body = raw.slice(opener[0].length, raw.length - opener[0].length);
+  if (body.includes("\\") || /[\r\n]/.test(body)) return undefined;
+  for (const delimiter of ['"', "'"]) {
+    if (body.includes(delimiter)) continue;
+    const candidate = `${delimiter}${body}${delimiter}`;
+    if (candidate.length < raw.length) return candidate;
+  }
+  return undefined;
+}
+
+// `if c then return a else return b end` says the same as
+// `return if c then a else b` in a good deal less space. Every arm has to
+// return exactly one value, and that value must not be multi-valued:
+// `return f()` passes every result through, where an if-expression would
+// truncate it to one.
+function singleReturnedValue(body: Stat[]): Expr | undefined {
+  if (body.length !== 1) return undefined;
+  const only = body[0];
+  if (only.type !== "ReturnStat" || only.args.length !== 1) return undefined;
+  const value = only.args[0];
+  const multiValued = value.type === "CallExpr" || value.type === "MethodCallExpr" || value.type === "VarargExpr";
+  return multiValued ? undefined : value;
+}
+
+function ifStatToReturn(stat: Stat): Stat | undefined {
+  // Without an else arm, falling through returns nothing at all, which is
+  // not the same as returning the nil an if-expression would produce.
+  if (stat.type !== "IfStat" || !stat.elseBody) return undefined;
+  const elseExpr = singleReturnedValue(stat.elseBody);
+  if (!elseExpr) return undefined;
+
+  const arms: { cond: Expr; expr: Expr }[] = [];
+  for (const clause of stat.clauses) {
+    const expr = singleReturnedValue(clause.body);
+    if (!expr) return undefined;
+    arms.push({ cond: clause.cond, expr });
+  }
+  if (!arms.length) return undefined;
+
+  const [first, ...rest] = arms;
+  return {
+    type: "ReturnStat",
+    args: [{
+      type: "IfExpr",
+      cond: first.cond,
+      thenExpr: first.expr,
+      elseifs: rest,
+      elseExpr,
+    }],
+  };
+}
+
+// A bare `return` at the end of a function body does exactly what falling
+// off the end does. Only a value-less one qualifies, and only in last
+// position, where nothing follows for it to have been skipping.
+function dropTrailingReturn(body: Stat[]): Stat[] {
+  const last = body[body.length - 1];
+  if (last?.type === "ReturnStat" && last.args.length === 0) return body.slice(0, -1);
+  return body;
+}
+
 const SIMPLE_STRING_INDEX_RE = /^(["'])([A-Za-z_][A-Za-z0-9_]*)\1$/;
 
 function stringIndexToFieldName(raw: string): string | undefined {
@@ -318,7 +386,7 @@ function foldExpr(expr: Expr): Expr {
     case "Identifier":
       return expr;
     case "StringExpr":
-      expr.raw = canonicalizeString(expr.raw);
+      expr.raw = longBracketToQuoted(expr.raw) ?? canonicalizeString(expr.raw);
       return expr;
     case "NumberExpr":
       expr.raw = canonicalizeNumber(expr.raw);
@@ -347,7 +415,7 @@ function foldExpr(expr: Expr): Expr {
       expr.args = expr.args.map(foldExpr);
       return expr;
     case "FunctionExpr":
-      expr.body = optimizeBlock(expr.body);
+      expr.body = dropTrailingReturn(optimizeBlock(expr.body));
       return expr;
     case "TableExpr":
       expr.fields = expr.fields.map((field) => {
@@ -555,11 +623,11 @@ function optimizeStat(stat: Stat): Stat | undefined {
       }
       return stat;
     case "LocalFunctionStat":
-      stat.func.body = optimizeBlock(stat.func.body);
+      stat.func.body = dropTrailingReturn(optimizeBlock(stat.func.body));
       return stat;
     case "FunctionDeclStat":
       stat.target.base = foldExpr(stat.target.base);
-      stat.func.body = optimizeBlock(stat.func.body);
+      stat.func.body = dropTrailingReturn(optimizeBlock(stat.func.body));
       return stat;
     case "AssignStat": {
       stat.targets = stat.targets.map((t) => foldExpr(t) as typeof t);
@@ -620,12 +688,15 @@ function optimizeStat(stat: Stat): Stat | undefined {
           }
         }
       }
-      return stat;
+      return ifStatToReturn(stat) ?? stat;
     }
     case "NumericForStat":
       stat.start = foldExpr(stat.start);
       stat.stop = foldExpr(stat.stop);
       if (stat.step) stat.step = foldExpr(stat.step);
+      // A step of 1 is the default, so spelling it out costs two characters
+      // and says nothing.
+      if (stat.step?.type === "NumberExpr" && parseLuauNumber(stat.step.raw) === 1) stat.step = undefined;
       stat.body = optimizeBlock(stat.body);
       return stat;
     case "GenericForStat":

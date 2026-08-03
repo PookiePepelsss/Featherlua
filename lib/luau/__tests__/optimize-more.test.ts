@@ -145,11 +145,19 @@ describe("optimize: string literal concatenation", () => {
     expect(result.output).toContain("..");
   });
 
-  it("does not fold long-bracket strings", () => {
-    const result = compressAggressive('local x = [[a]] .. [[b]]');
+  it("quotes long-bracket strings that need no escapes, then folds them", () => {
+    // `[[a]]` becomes `"a"`, which brings the pair within reach of the
+    // concatenation fold that only handles matching delimiters.
+    expect(output("local x = [[a]] .. [[b]] return x")).toBe('return"ab"');
+  });
+
+  it("leaves a long-bracket string that would need escaping", () => {
+    // A backslash is literal inside long brackets but an escape inside
+    // quotes, so this one has to stay as it is.
+    const result = compressAggressive("local x = [[back" + String.fromCharCode(92) + "slash]] return x");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toContain("..");
+    expect(result.output).toContain("[[back");
   });
 
   it("does not fold number..string (needs Lua's exact tostring formatting, not attempted)", () => {
