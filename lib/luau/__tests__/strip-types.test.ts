@@ -20,7 +20,7 @@ describe("Aggressive mode strips type annotations (zero runtime effect in Luau)"
     expect(result.output).not.toContain(":boolean");
     // `f` (root scope) -> "a"; its params start from the next free index
     // in the function's own (child) scope -> "b","c".
-    expect(result.output).toBe("local function a(b,c)return true end");
+    expect(result.output).toBe("local function a(a,b)return true end");
   });
 
   it("removes local variable type annotations", () => {
@@ -35,7 +35,7 @@ describe("Aggressive mode strips type annotations (zero runtime effect in Luau)"
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).not.toContain("<T>");
-    expect(result.output).toBe("local function a(b)return b end");
+    expect(result.output).toBe("local function a(a)return a end");
   });
 
   it("drops `type` alias declarations entirely", () => {

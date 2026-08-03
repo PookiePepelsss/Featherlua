@@ -194,31 +194,37 @@ export function computeRenameMap(resolved: ResolvedProgram, pinnedNames?: Set<st
   const taken = new Set<string>([...KEYWORDS, ...SOFT_KEYWORDS, ...globals, ...pinned]);
   const renameMap = new Map<number, string>();
 
-  function nextFreeIndex(startIndex: number): { name: string; afterIndex: number } {
-    let n = startIndex;
-    let candidate: string;
-    do {
-      candidate = shortName(n);
-      n += 1;
-    } while (taken.has(candidate));
-    return { name: candidate, afterIndex: n };
-  }
+  function visit(scope: Scope) {
+    // Only the outer names actually read inside this scope are off limits.
+    // Anything else an ancestor holds can be reused here, which is what
+    // keeps deeply nested code on single-character names instead of
+    // spilling into two once a chunk has more than 52 locals.
+    const blocked = new Set<string>();
+    for (const id of scope.outerRefs) {
+      const name = renameMap.get(id);
+      if (name !== undefined) blocked.add(name);
+    }
 
-  function visit(scope: Scope, baseIndex: number) {
-    let index = baseIndex;
     const symbols = scope.declaredOrder
       .map((symbolId, order) => ({ symbolId, order, symbol: resolved.symbols.get(symbolId)! }))
       .filter((entry) => entry.symbol.kind !== "self" && !pinned.has(entry.symbol.originalName))
       .sort((a, b) => (references.get(b.symbolId) ?? 0) - (references.get(a.symbolId) ?? 0) || a.order - b.order);
 
+    let index = 0;
     for (const { symbolId } of symbols) {
-      const { name, afterIndex } = nextFreeIndex(index);
-      renameMap.set(symbolId, name);
-      index = afterIndex;
+      let candidate: string;
+      do {
+        candidate = shortName(index);
+        index += 1;
+      } while (taken.has(candidate) || blocked.has(candidate));
+      renameMap.set(symbolId, candidate);
+      // Declarations in one scope are all simultaneously live, so they also
+      // block each other, and they block every descendant that reads them.
+      blocked.add(candidate);
     }
-    for (const child of scope.children) visit(child, index);
+    for (const child of scope.children) visit(child);
   }
 
-  visit(resolved.rootScope, 0);
+  visit(resolved.rootScope);
   return renameMap;
 }

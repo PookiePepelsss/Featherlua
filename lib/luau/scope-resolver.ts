@@ -22,6 +22,11 @@ export interface Scope {
    * is two distinct symbols, both need their own slot). */
   declaredOrder: number[];
   children: Scope[];
+  /** Symbols declared in an ancestor scope and referenced somewhere inside
+   * this scope's subtree. A generated name may be reused by a nested scope
+   * exactly when the outer symbol holding it does not appear in that set:
+   * shadowing a binding nothing inside reads is unobservable. */
+  outerRefs: Set<number>;
 }
 
 export interface ResolvedProgram {
@@ -41,7 +46,7 @@ class ScopeResolver {
   }
 
   private pushScope(parent: Scope | null): Scope {
-    const scope: Scope = { parent, names: new Map(), declaredOrder: [], children: [] };
+    const scope: Scope = { parent, names: new Map(), declaredOrder: [], children: [], outerRefs: new Set() };
     if (parent) parent.children.push(scope);
     return scope;
   }
@@ -56,7 +61,14 @@ class ScopeResolver {
   private lookup(name: string, scope: Scope | null): Symbol | undefined {
     for (let s = scope; s !== null; s = s.parent) {
       const found = s.names.get(name);
-      if (found) return found;
+      if (found) {
+        // Every scope between the reference and the declaration now has
+        // this symbol live inside it.
+        for (let walk = scope; walk !== null && walk !== s; walk = walk.parent) {
+          walk.outerRefs.add(found.id);
+        }
+        return found;
+      }
     }
     return undefined;
   }
