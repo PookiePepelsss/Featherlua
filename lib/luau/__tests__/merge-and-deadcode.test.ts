@@ -44,12 +44,14 @@ describe("scratch: merge-adjacent-locals", () => {
 });
 
 describe("scratch: dead code after terminator", () => {
+  // `break` and `continue` have to end their block, so unreachable code
+  // after one only ever appears once branch folding has produced it.
   it("drops code after break", () => {
-    const o = out('for i=1,3 do\n  break\n  print("dead")\nend');
+    const o = out('for i=1,3 do if true then break end print("dead") end');
     expect(o).not.toContain("dead");
   });
   it("drops code after continue", () => {
-    const o = out('for i=1,3 do\n  continue\n  print("dead")\nend');
+    const o = out('for i=1,3 do if true then continue end print("dead") end');
     expect(o).not.toContain("dead");
   });
   it("drops code after goto when no top-level label follows", () => {

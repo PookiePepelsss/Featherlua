@@ -33,9 +33,11 @@ describe("do-blocks are inlined only when they bind nothing", () => {
       .toBe("do local function a()return 1 end print(a())end print(2)");
   });
 
-  it("a trailing return is not lifted into the middle of a block", () => {
-    const result = output("local function f() do return 1 end print(2) end print(f())");
-    expect(result).toContain("do return 1 end");
+  it("a wrapper that always terminates makes the rest of the block dead", () => {
+    // Nothing after `do return 1 end` can run, so the tail goes and the
+    // wrapper is then free to inline as the new last statement.
+    expect(output("local function f() do return 1 end print(2) end print(f())"))
+      .toBe("local function a()return 1 end print(a())");
   });
 
   it("a trailing return is lifted when the wrapper ends the block", () => {
@@ -54,6 +56,12 @@ describe("inlining a do-block never changes what runs", () => {
     "if true then print('a') else print('b') end print('c')",
     "local t = {} do t.k = 1 end print(t.k)",
     "do local a = 1 do local a = 2 print(a) end print(a) end",
+    'for i = 1, 4 do if true then break end print("d") end print("after")',
+    'for i = 1, 4 do if true then continue end print("d") end print("after")',
+    'for i = 1, 4 do do break end print("d") end print("after")',
+    'while true do do break end print("d") end print("after")',
+    'local function g() do return 1 end print("d") end print(g())',
+    "local t = 0 for i = 1, 5 do if i % 2 == 0 then continue end t += i end print(t)",
   ];
 
   for (const source of SCRIPTS) {

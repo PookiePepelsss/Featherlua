@@ -126,9 +126,31 @@ class Parser {
         stats.push(this.parseReturnStat());
         break;
       }
-      stats.push(this.parseStatement());
+      const stat = this.parseStatement();
+      stats.push(stat);
+      // Luau requires `break` and `continue` to end their block, exactly as
+      // `return` does. Enforcing it here is what stops an optimization pass
+      // from emitting a block that Luau's own compiler would reject: the
+      // re-parse self-check only catches what this parser refuses.
+      if (stat.type === "BreakStat" || stat.type === "ContinueStat") {
+        this.skipSemicolons();
+        if (!this.isBlockEnd()) {
+          const tok = this.peek(0);
+          throw new ParseError(
+            `'${stat.type === "BreakStat" ? "break" : "continue"}' must be the last statement in its block`,
+            tok.line,
+            tok.col,
+            tok.start,
+          );
+        }
+        break;
+      }
     }
     return stats;
+  }
+
+  private skipSemicolons() {
+    while (this.atSymbol(";")) this.advance();
   }
 
   // A bare `continue`/`type`/`export` Name is a soft keyword only in this

@@ -373,12 +373,19 @@ function optimizeBlock(stats: Stat[]): Stat[] {
   for (let i = 0; i < stats.length; i += 1) {
     const result = optimizeStat(stats[i]);
     if (!result) continue;
-    if (result.type === "DoStat" && canInlineDoBlock(result, i === stats.length - 1)) {
+    // A do-block whose body ends in a terminator terminates the parent too:
+    // nothing after it can run, so the rest of the block goes and the
+    // wrapper is free to inline as the new last statement.
+    const rest = stats.slice(i + 1);
+    const reachable = hasTopLevelLabel(rest);
+    const terminates =
+      isTerminator(result) || (result.type === "DoStat" && endsInTerminator(result.body));
+    if (result.type === "DoStat" && canInlineDoBlock(result, i === stats.length - 1 || (terminates && !reachable))) {
       kept.push(...result.body);
     } else {
       kept.push(result);
     }
-    if (isTerminator(result) && !hasTopLevelLabel(stats.slice(i + 1))) break;
+    if (terminates && !reachable) break;
   }
   return kept;
 }
@@ -386,14 +393,19 @@ function optimizeBlock(stats: Stat[]): Stat[] {
 // A `do ... end` exists only to bound a scope, so one that declares nothing
 // is six characters of nothing. Most of these are left behind by branch
 // elimination (`if true then f() end` becomes `do f() end`) rather than
-// written by hand. A trailing `return` is the one catch: it has to be the
-// last statement of its block, so inlining it into the middle of the parent
-// would not parse.
+// written by hand.
 function canInlineDoBlock(stat: DoStat, isLastInParent: boolean): boolean {
   if (declaresNames(stat.body) || containsLabel(stat.body)) return false;
   const last = stat.body[stat.body.length - 1];
-  if (last?.type === "ReturnStat" && !isLastInParent) return false;
+  // `return`, `break` and `continue` each have to end their block, so one
+  // lifted into the middle of the parent would not parse.
+  if (last && isTerminator(last) && !isLastInParent) return false;
   return true;
+}
+
+function endsInTerminator(stats: Stat[]): boolean {
+  const last = stats[stats.length - 1];
+  return last !== undefined && isTerminator(last);
 }
 
 function declaresNames(stats: Stat[]): boolean {
