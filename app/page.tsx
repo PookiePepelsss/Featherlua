@@ -87,12 +87,7 @@ export default function Home() {
       const rollback = result.rolledBack.length
         ? `Skipped because they did not reduce size: ${result.rolledBack.join(", ")}.`
         : null;
-      const alias = result.aliasGlobalsSaving
-        ? `Alias repeated globals would save a further ${result.aliasGlobalsSaving.toLocaleString()} B. ` +
-          "It is off by default because an alias keeps whatever a global held when the script started, " +
-          "so anything that replaces or hooks that global later would be missed."
-        : null;
-      setWarning([result.warning, rollback, alias].filter(Boolean).join(" ") || null);
+      setWarning([result.warning, rollback].filter(Boolean).join(" ") || null);
       setRepair(
         result.repaired
           ? { description: result.repaired.description, line: result.repaired.line, fixed: result.repaired.source, applied: true }

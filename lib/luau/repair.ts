@@ -231,20 +231,24 @@ function missingUntilRepair(source: string): Repair | undefined {
 }
 
 function surplusEndRepair(source: string, error: ParseError): Repair | undefined {
-  const { missingEnds } = blockBalance(source);
-  if (missingEnds !== -1) return undefined;
+  // When the parser names an `end` as unexpected it is saying no block was
+  // open for it, and that token is the one to drop. Requiring the file to
+  // balance to exactly one surplus first was wrong: a long script is
+  // usually off in more than one way at once, and gating on the whole-file
+  // count meant the named token was never even tried.
+  const namedByParser = /^Unexpected token 'end'/.test(error.message) && source.startsWith("end", error.index);
 
-  // The parser names the exact `end` that had nothing left to close, and
-  // that is the one to drop. Taking the last `end` in the file instead
-  // works only when the mistake happens to be at the tail; anywhere else it
-  // deletes a closer some later block still needs.
   const candidates: number[] = [];
-  if (/^Unexpected token 'end'/.test(error.message) && source.startsWith("end", error.index)) {
-    candidates.push(error.index);
+  if (namedByParser) candidates.push(error.index);
+
+  // Falling back to the last `end` only makes sense when the count says
+  // there is exactly one too many and the parser did not point anywhere.
+  if (!namedByParser && blockBalance(source).missingEnds === -1) {
+    let last: number | undefined;
+    for (const token of codeTokens(source)) if (token.text === "end") last = token.index;
+    if (last !== undefined) candidates.push(last);
   }
-  let last: number | undefined;
-  for (const token of codeTokens(source)) if (token.text === "end") last = token.index;
-  if (last !== undefined) candidates.push(last);
+  if (!candidates.length) return undefined;
 
   for (const at of candidates) {
     // Take the line's whitespace with it so no blank line is left behind.

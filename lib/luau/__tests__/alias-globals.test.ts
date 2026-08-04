@@ -36,13 +36,28 @@ describe("global aliasing", () => {
     expect(result.output).not.toMatch(/^local \w+=someglobalname/);
   });
 
-  it("does nothing at all when the script uses reflection APIs", () => {
-    const source = `${Array.from({ length: 8 }, () => "tostring(1)").join("\n")}\nprint(getfenv(1))`;
-    const result = compressAggressive(source, on);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.output).not.toMatch(/^local \w+=tostring/);
-  });
+  // Anything that can reach the global table by another route can replace a
+  // global without ever assigning to it here, and the alias would go on
+  // holding the old value.
+  const RISKY = [
+    "print(getfenv(1))",
+    "_G.x = 1",
+    "print(_G.x)",
+    "shared.flag = true",
+    "print(getrawmetatable(game))",
+    "hookfunction(print, warn)",
+    "local f = newcclosure(function() end)",
+  ];
+
+  for (const risky of RISKY) {
+    it(`does nothing at all alongside ${risky}`, () => {
+      const source = `${Array.from({ length: 8 }, () => "tostring(1)").join("\n")}\n${risky}`;
+      const result = compressAggressive(source, on);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.output).not.toMatch(/^local \w+=tostring/);
+    });
+  }
 
   it("is off by default", () => {
     const source = Array.from({ length: 8 }, () => "tostring(1)").join("\n");

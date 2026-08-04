@@ -189,7 +189,7 @@ textarea[aria-invalid="true"] { color: #ff9b9b; }
 
 .statsLabel {
   margin-right: 5px;
-  color: var(--line);
+  color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }

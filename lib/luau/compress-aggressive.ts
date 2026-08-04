@@ -23,9 +23,6 @@ export type CompressResult =
       warning?: string;
       rolledBack?: string[];
       appliedOptions?: AggressiveOptions;
-      /** Bytes that enabling "Alias repeated globals" would additionally
-       * save, when it is off and would in fact help. */
-      aliasGlobalsSaving?: number;
     }
   | { ok: false; error: { message: string; line: number; col: number } };
 
@@ -246,22 +243,7 @@ export function compressAggressive(source: string, options: Partial<AggressiveOp
     warning,
     rolledBack: [...rolledBack],
     appliedOptions: active,
-    aliasGlobalsSaving: aliasGlobalsSaving(source, active, best.output),
   };
 }
 
-// Global aliasing stays off by default because an alias freezes the value a
-// global held when the chunk started, and the target here is executor
-// scripts, where another script hooking a shared global at runtime is
-// ordinary. That is a call for whoever is shipping the script, not one to
-// make silently for 3% -- but it is also the single largest remaining
-// saving, so measuring it is the difference between an informed choice and
-// an invisible option. Returns undefined when it is already on, when the
-// pass declines the script, or when it would not actually help.
-function aliasGlobalsSaving(source: string, active: AggressiveOptions, output: string): number | undefined {
-  if (active.aliasGlobals) return undefined;
-  const aliased = compressAggressiveCore(source, { ...active, aliasGlobals: true });
-  if (!aliased.ok) return undefined;
-  const saving = byteLength(output) - byteLength(aliased.output);
-  return saving > 0 ? saving : undefined;
-}
+

@@ -106,7 +106,6 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
               warning: result.warning,
               durationMs: performance.now() - started,
               rolledBack: result.rolledBack ?? [],
-              aliasGlobalsSaving: result.aliasGlobalsSaving,
               repaired,
             }
           : { id: request.id, ok: false, error: compilerError("output", outputValidation.error) };

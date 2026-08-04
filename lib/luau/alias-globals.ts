@@ -49,6 +49,16 @@ const ENVIRONMENT_APIS = new Set([
   "setreadonly",
   "loadstring",
   "require",
+  // Direct handles on the global table: anything reached through these can
+  // replace a global by name without ever assigning to it in this chunk.
+  "_G",
+  "shared",
+  // A metatable on the environment makes a global's value a function call,
+  // so reading it once at the top is not the same as reading it each time.
+  "getrawmetatable",
+  "setrawmetatable",
+  "newcclosure",
+  "checkcaller",
 ]);
 
 function touchesEnvironment(body: Stat[]): boolean {

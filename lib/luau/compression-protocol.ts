@@ -19,7 +19,6 @@ export type CompressionResponse =
       warning?: string;
       durationMs: number;
       rolledBack: string[];
-      aliasGlobalsSaving?: number;
       /** Set when Auto Repair changed the script before compressing it. */
       repaired?: { description: string; line: number; source: string };
     }
