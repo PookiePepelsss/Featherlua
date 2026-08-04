@@ -17,5 +17,6 @@ export type CompressionResponse =
       warning?: string;
       durationMs: number;
       rolledBack: string[];
+      aliasGlobalsSaving?: number;
     }
   | { id: number; ok: false; error: string };
