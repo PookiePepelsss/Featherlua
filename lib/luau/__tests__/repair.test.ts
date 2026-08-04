@@ -69,6 +69,27 @@ describe("a repair never changes what the script does", () => {
     expect(repair.fixed).toBe('local function greet(name)\n\tprint(name)\nend\ngreet("Pookie")\n');
   });
 
+  it("removes the surplus `end` the parser named, not the last one in the file", () => {
+    // Taking the last `end` would delete the closer that `b` still needs,
+    // which is how a stray `end` thousands of lines up goes unrepaired.
+    const broken = [
+      "local function a()",
+      "\tprint(1)",
+      "end",
+      "end",
+      "local function b()",
+      "\tprint(2)",
+      "end",
+      "a() b()",
+    ].join("\n");
+    const [repair] = suggestRepairs(broken);
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.line).toBe(4);
+    expect(repair.fixed).toBe(
+      "local function a()\n\tprint(1)\nend\nlocal function b()\n\tprint(2)\nend\na() b()",
+    );
+  });
+
   it("still appends when nothing follows the block", () => {
     const [repair] = suggestRepairs("local function f()\n\tprint(1)");
     expect(repair.fixed).toBe("local function f()\n\tprint(1)\nend\n");

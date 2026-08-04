@@ -212,6 +212,31 @@ textarea[aria-invalid="true"] { color: #ff9b9b; }
   animation: fadeSlideIn 220ms ease;
 }
 
+.repairToggle {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 3px;
+  background: #101210;
+}
+
+.repairToggle button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.repairToggle button:hover:not(:disabled) { color: var(--text); }
+
+.repairToggle .modeActive {
+  background: #1e2a1c;
+  color: #cfeac0;
+}
+
 .repair {
   display: flex;
   flex-wrap: wrap;

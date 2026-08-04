@@ -228,16 +228,34 @@ function missingUntilRepair(source: string): Repair | undefined {
   return { description: "closed a `repeat` with `until true`", fixed, line: countNewlines(source) + 1 };
 }
 
-function surplusEndRepair(source: string): Repair | undefined {
+function surplusEndRepair(source: string, error: ParseError): Repair | undefined {
   const { missingEnds } = blockBalance(source);
   if (missingEnds !== -1) return undefined;
-  // Drop the last `end`, which is the one that has nothing left to close.
-  let last: { index: number; line: number } | undefined;
-  for (const token of codeTokens(source)) if (token.text === "end") last = token;
-  if (!last) return undefined;
-  const fixed = `${source.slice(0, last.index)}${source.slice(last.index + 3)}`;
-  if (!parses(fixed)) return undefined;
-  return { description: "removed an `end` with no block left to close", fixed, line: last.line };
+
+  // The parser names the exact `end` that had nothing left to close, and
+  // that is the one to drop. Taking the last `end` in the file instead
+  // works only when the mistake happens to be at the tail; anywhere else it
+  // deletes a closer some later block still needs.
+  const candidates: number[] = [];
+  if (/^Unexpected token 'end'/.test(error.message) && source.startsWith("end", error.index)) {
+    candidates.push(error.index);
+  }
+  let last: number | undefined;
+  for (const token of codeTokens(source)) if (token.text === "end") last = token.index;
+  if (last !== undefined) candidates.push(last);
+
+  for (const at of candidates) {
+    // Take the line's whitespace with it so no blank line is left behind.
+    const lineStart = source.lastIndexOf("\n", at - 1) + 1;
+    const onlyThingOnTheLine = source.slice(lineStart, at).trim() === "";
+    const cutFrom = onlyThingOnTheLine ? lineStart : at;
+    const cutTo = onlyThingOnTheLine && source[at + 3] === "\n" ? at + 4 : at + 3;
+    const fixed = `${source.slice(0, cutFrom)}${source.slice(cutTo)}`;
+    if (parses(fixed)) {
+      return { description: "removed an `end` with no block left to close", fixed, line: lineOf(source, at) };
+    }
+  }
+  return undefined;
 }
 
 /** Inserts a keyword the parser said it wanted, at the point it wanted it. */
@@ -306,7 +324,7 @@ export function suggestRepairs(source: string): Repair[] {
     missingKeywordRepair(source, error),
     missingUntilRepair(source),
     unclosedBracketRepair(source),
-    surplusEndRepair(source),
+    surplusEndRepair(source, error),
   ];
 
   const seen = new Set<string>();

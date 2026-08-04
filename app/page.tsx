@@ -32,9 +32,10 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [working, setWorking] = useState(false);
   const [mode, setMode] = useState<CompressionMode>("safe");
+  const [autoRepair, setAutoRepair] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
-  const [repair, setRepair] = useState<{ description: string; line: number; fixed: string } | null>(null);
+  const [repair, setRepair] = useState<{ description: string; line: number; fixed: string; applied: boolean } | null>(null);
   const [options, setOptions] = useState<AggressiveOptions>(DEFAULT_AGGRESSIVE_OPTIONS);
   const [stats, setStats] = useState<Stats | null>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -78,7 +79,7 @@ export default function Home() {
       setWorking(false);
       if (!event.data.ok) {
         setError(event.data.error);
-        setRepair(event.data.repair ?? null);
+        setRepair(event.data.repair ? { ...event.data.repair, applied: false } : null);
         return;
       }
       const result = event.data;
@@ -92,6 +93,11 @@ export default function Home() {
           "so anything that replaces or hooks that global later would be missed."
         : null;
       setWarning([result.warning, rollback, alias].filter(Boolean).join(" ") || null);
+      setRepair(
+        result.repaired
+          ? { description: result.repaired.description, line: result.repaired.line, fixed: result.repaired.source, applied: true }
+          : null,
+      );
       setStats({
         inputChars: pendingSource.current.length,
         inputBytes: bytes(pendingSource.current),
@@ -107,7 +113,7 @@ export default function Home() {
       setWorking(false);
       setError(event.message || "Compression worker failed.");
     };
-    const request: CompressionRequest = { id, source, mode, options };
+    const request: CompressionRequest = { id, source, mode, options, autoRepair };
     worker.postMessage(request);
   }
 
@@ -186,7 +192,9 @@ export default function Home() {
       {repair && (
         <div className="repair" role="status">
           <span>
-            One edit makes this compile: {repair.description}, at line {repair.line}.
+            {repair.applied
+              ? `Auto Repair ${repair.description}, at line ${repair.line}, then compressed.`
+              : `One edit makes this compile: ${repair.description}, at line ${repair.line}.`}
           </span>
           <button
             type="button"
@@ -195,7 +203,7 @@ export default function Home() {
               invalidateResult();
             }}
           >
-            Apply the fix
+            {repair.applied ? "Keep it in the input" : "Apply the fix"}
           </button>
         </div>
       )}
@@ -231,6 +239,17 @@ export default function Home() {
             onClick={() => { setMode("aggressive"); invalidateResult(); }}
           >
             Aggressive
+          </button>
+        </div>
+        <div className="repairToggle">
+          <button
+            type="button"
+            className={autoRepair ? "modeActive" : undefined}
+            aria-pressed={autoRepair}
+            title="Apply a single verified fix for an unclosed block or a stray end, then compress."
+            onClick={() => { setAutoRepair((on) => !on); invalidateResult(); }}
+          >
+            Auto Repair
           </button>
         </div>
         <button className={working ? "primary isWorking" : "primary"} onClick={compress} disabled={!source.trim() || working}>

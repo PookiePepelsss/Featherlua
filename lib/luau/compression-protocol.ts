@@ -7,6 +7,8 @@ export interface CompressionRequest {
   source: string;
   mode: CompressionMode;
   options: AggressiveOptions;
+  /** Apply a verified repair and carry on, rather than only offering it. */
+  autoRepair: boolean;
 }
 
 export type CompressionResponse =
@@ -18,6 +20,8 @@ export type CompressionResponse =
       durationMs: number;
       rolledBack: string[];
       aliasGlobalsSaving?: number;
+      /** Set when Auto Repair changed the script before compressing it. */
+      repaired?: { description: string; line: number; source: string };
     }
   | {
       id: number;

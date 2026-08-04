@@ -48,32 +48,42 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
   const started = performance.now();
   let response: CompressionResponse;
   try {
+    const module = await getOfficialModule();
+
+    // With Auto Repair on, a script the compiler will not accept gets one
+    // verified edit applied before anything else runs, so the rest of the
+    // pipeline sees a script that compiles. The edit is reported alongside
+    // the result rather than folded in silently.
+    let source = request.source;
+    let repaired: { description: string; line: number; source: string } | undefined;
+    if (request.autoRepair && !compileWithOfficialLuau(module, source).success) {
+      const repair = findRepair(module, source);
+      if (repair) {
+        source = repair.fixed;
+        repaired = { description: repair.description, line: repair.line, source: repair.fixed };
+      }
+    }
+
     const aggressive = request.mode === "aggressive";
     const result = aggressive
-      ? compressAggressive(request.source, request.options)
-      : { ok: true as const, output: compressSafe(request.source) };
+      ? compressAggressive(source, request.options)
+      : { ok: true as const, output: compressSafe(source) };
     const safeCheck = result.ok && !aggressive
-      ? verifySafeCompression(request.source, result.output)
+      ? verifySafeCompression(source, result.output)
       : { success: true as const };
 
     if (!result.ok) {
-      response = {
-        id: request.id,
-        ok: false,
-        error: result.error.message,
-        repair: findRepair(await getOfficialModule(), request.source),
-      };
+      response = { id: request.id, ok: false, error: result.error.message, repair: findRepair(module, source) };
     } else if (!safeCheck.success) {
       response = { id: request.id, ok: false, error: `Token-preservation check failed: ${safeCheck.error}.` };
     } else {
-      const module = await getOfficialModule();
-      const inputValidation = compileWithOfficialLuau(module, request.source);
+      const inputValidation = compileWithOfficialLuau(module, source);
       if (!inputValidation.success) {
         response = {
           id: request.id,
           ok: false,
           error: compilerError("input", inputValidation.error),
-          repair: findRepair(module, request.source),
+          repair: findRepair(module, source),
         };
       } else {
         const outputValidation = compileWithOfficialLuau(module, result.output);
@@ -86,6 +96,7 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
               durationMs: performance.now() - started,
               rolledBack: result.rolledBack ?? [],
               aliasGlobalsSaving: result.aliasGlobalsSaving,
+              repaired,
             }
           : { id: request.id, ok: false, error: compilerError("output", outputValidation.error) };
       }
