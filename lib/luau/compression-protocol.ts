@@ -19,4 +19,11 @@ export type CompressionResponse =
       rolledBack: string[];
       aliasGlobalsSaving?: number;
     }
-  | { id: number; ok: false; error: string };
+  | {
+      id: number;
+      ok: false;
+      error: string;
+      /** A single unambiguous edit that makes the script parse and compile,
+       * offered rather than applied so the change stays the author's. */
+      repair?: { description: string; line: number; fixed: string };
+    };

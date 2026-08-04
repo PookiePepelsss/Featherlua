@@ -212,6 +212,37 @@ textarea[aria-invalid="true"] { color: #ff9b9b; }
   animation: fadeSlideIn 220ms ease;
 }
 
+.repair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #2f4a2c;
+  border-radius: 9px;
+  padding: 11px 14px;
+  background: #101710;
+  color: #b7d9a8;
+  font-size: 12px;
+  line-height: 1.5;
+  animation: fadeSlideIn 220ms ease;
+}
+
+.repair span { flex: 1; min-width: 220px; }
+
+.repair button {
+  min-height: 30px;
+  padding: 0 12px;
+  border-color: #3c5c38;
+  background: #162115;
+  color: #d7f0cb;
+  font-size: 12px;
+}
+
+.repair button:hover:not(:disabled) {
+  border-color: #517a4b;
+  background: #1d2c1b;
+}
+
 .options {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

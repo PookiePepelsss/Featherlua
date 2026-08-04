@@ -34,6 +34,7 @@ export default function Home() {
   const [mode, setMode] = useState<CompressionMode>("safe");
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [repair, setRepair] = useState<{ description: string; line: number; fixed: string } | null>(null);
   const [options, setOptions] = useState<AggressiveOptions>(DEFAULT_AGGRESSIVE_OPTIONS);
   const [stats, setStats] = useState<Stats | null>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -53,6 +54,7 @@ export default function Home() {
     setOutput("");
     setError(null);
     setWarning(null);
+    setRepair(null);
     setStats(null);
     setCopied(false);
   }
@@ -76,6 +78,7 @@ export default function Home() {
       setWorking(false);
       if (!event.data.ok) {
         setError(event.data.error);
+        setRepair(event.data.repair ?? null);
         return;
       }
       const result = event.data;
@@ -177,6 +180,23 @@ export default function Home() {
             </span>
           )}
           <span>{stats.durationMs.toFixed(1)} ms</span>
+        </div>
+      )}
+
+      {repair && (
+        <div className="repair" role="status">
+          <span>
+            One edit makes this compile: {repair.description}, at line {repair.line}.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setSource(repair.fixed);
+              invalidateResult();
+            }}
+          >
+            Apply the fix
+          </button>
         </div>
       )}
 
