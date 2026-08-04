@@ -190,10 +190,12 @@ function appendCode(source: string, addition: string) {
 function missingEndRepair(source: string): Repair | undefined {
   const { missingEnds, missingUntils, open, surplusEnds } = blockBalance(source);
   if (missingEnds <= 0 || missingUntils !== 0 || surplusEnds !== 0) return undefined;
-  // More than a handful means the source is not simply missing a closer,
-  // and guessing where several belong is exactly the judgement call this
-  // is not willing to make.
-  if (missingEnds > 3) return undefined;
+  // A long file can genuinely be missing several closers, and each one is
+  // placed from its own opener's indentation rather than guessed at, so the
+  // count is not what makes this risky. The cap is only here to stop a file
+  // that is wrong in some entirely different way from being papered over
+  // with a wall of `end`s.
+  if (missingEnds > 25) return undefined;
 
   // Close the innermost unclosed block first, each at the place its own
   // indentation points to. Putting them all at the end of the file instead
@@ -264,12 +266,29 @@ function missingKeywordRepair(source: string, error: ParseError): Repair | undef
   // out of input, which is rarely where the block was meant to close.
   // missingEndRepair works that out from indentation instead.
   const wanted = /^Expected '(then|do|until|,)'/.exec(error.message);
-  if (!wanted) return undefined;
-  const keyword = wanted[1];
-  const separator = keyword === "," ? "" : " ";
-  const fixed = `${source.slice(0, error.index)}${keyword}${separator}${source.slice(error.index)}`;
-  if (!parses(fixed)) return undefined;
-  return { description: `added a missing \`${keyword}\``, fixed, line: error.line };
+  if (wanted) {
+    const keyword = wanted[1];
+    const separator = keyword === "," ? "" : " ";
+    const fixed = `${source.slice(0, error.index)}${keyword}${separator}${source.slice(error.index)}`;
+    if (parses(fixed)) return { description: `added a missing \`${keyword}\``, fixed, line: error.line };
+    return undefined;
+  }
+
+  // A table or argument list missing a separator reads to the parser as a
+  // closing bracket that never arrived, because the next entry is where it
+  // expected `}`. The comma belongs just before that entry.
+  if (/^Expected '[)\]}]'/.test(error.message)) {
+    const withComma = `${source.slice(0, error.index)}, ${source.slice(error.index)}`;
+    if (parses(withComma)) return { description: "added a missing `,`", fixed: withComma, line: error.line };
+    const beforeLine = source.lastIndexOf("\n", error.index - 1);
+    if (beforeLine > 0) {
+      const atLineEnd = `${source.slice(0, beforeLine)},${source.slice(beforeLine)}`;
+      if (parses(atLineEnd)) {
+        return { description: "added a missing `,`", fixed: atLineEnd, line: lineOf(source, beforeLine) };
+      }
+    }
+  }
+  return undefined;
 }
 
 /** Closes brackets left open, when only the count is wrong. */

@@ -26,6 +26,15 @@ const FIXABLE: [string, string, string][] = [
   ["an unclosed paren", "print((1 + 2)\nprint(3)", "closed an unclosed `(`"],
   ["an unclosed brace", "local t = {a = 1, b = 2\nprint(t)", "closed an unclosed `{`"],
   ["one end too many", "local x = 1\nprint(x)\nend", "removed an `end` with no block left to close"],
+  ["a missing comma between table entries", "local t = {\n\ta = 1\n\tb = 2,\n}\nreturn t", "added a missing `,`"],
+  [
+    "several functions left open at once, as a long file has",
+    `local M = {}\n${Array.from(
+      { length: 5 },
+      (_, i) => `function M.f${i}()\n\tlocal t = {}\n\tfor k in pairs(t) do\n\t\tprint(k)\n\tend`,
+    ).join("\n")}\nreturn M`,
+    "added 5 missing `end`s",
+  ],
 ];
 
 describe("simple omissions are repaired", () => {
@@ -47,7 +56,10 @@ const LEFT_ALONE: [string, string][] = [
   ["source that already parses and is empty", ""],
   ["gibberish", "local = = = 3 ]]]"],
   ["several unrelated errors at once", "function ( ) ) end end end if if if"],
-  ["far too many blocks left open", "if a then\nif b then\nif c then\nif d then\nprint(1)"],
+  // A handful of unclosed blocks is ordinary in a long file and does get
+  // repaired. Dozens of them means the file is wrong in some other way, and
+  // a wall of `end`s would paper over that rather than fix it.
+  ["dozens of blocks left open", `${"if a then\n".repeat(30)}print(1)`],
   ["crossed brackets", "print((1 + 2]\n"],
 ];
 

@@ -47,6 +47,7 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
   const request = event.data;
   const started = performance.now();
   let response: CompressionResponse;
+  let repairWasDeclined = false;
   try {
     const module = await getOfficialModule();
 
@@ -61,6 +62,11 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
       if (repair) {
         source = repair.fixed;
         repaired = { description: repair.description, line: repair.line, source: repair.fixed };
+      } else {
+        // Saying nothing here reads as Auto Repair being broken rather than
+        // as it having looked and declined, which is the honest outcome for
+        // anything with more than one sensible reading.
+        repairWasDeclined = true;
       }
     }
 
@@ -73,7 +79,12 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
       : { success: true as const };
 
     if (!result.ok) {
-      response = { id: request.id, ok: false, error: result.error.message, repair: findRepair(module, source) };
+      response = {
+        id: request.id,
+        ok: false,
+        error: result.error.message,
+        repair: findRepair(module, source),
+      };
     } else if (!safeCheck.success) {
       response = { id: request.id, ok: false, error: `Token-preservation check failed: ${safeCheck.error}.` };
     } else {
@@ -103,6 +114,14 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
     }
   } catch (error) {
     response = { id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  // Auto Repair saying nothing at all reads as it being broken rather than
+  // as it having looked and declined, so the outcome is reported wherever
+  // the failure happened to come from.
+  if (!response.ok && repairWasDeclined) {
+    response = { ...response, error: `${response.error}
+
+Auto Repair looked at this and did not find a single unambiguous fix, so it changed nothing. It only handles an unclosed block, a missing then/do/until, an unclosed bracket, a missing comma, or one end too many.` };
   }
   self.postMessage(response);
 };
