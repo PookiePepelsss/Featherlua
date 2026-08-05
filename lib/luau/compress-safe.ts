@@ -150,6 +150,11 @@ function scanTokenEnd(source: string, cursor: number) {
 // token of the joined text is not exactly `left`, the pair needs separating.
 // Comment and long-bracket openers are checked first because those are not
 // tokens at all, so re-scanning cannot see them.
+/** True when this token is a numeric literal rather than a name or symbol. */
+function startsNumber(token: string) {
+  return digit.test(token[0] ?? "") || (token[0] === "." && digit.test(token[1] ?? ""));
+}
+
 function needsSpace(left: string, right: string) {
   const leftEnd = left.at(-1) ?? "";
   const rightStart = right[0] ?? "";
@@ -159,6 +164,13 @@ function needsSpace(left: string, right: string) {
   // correctly: Luau reads a number and the identifier touching it as one
   // malformed literal, so `1` before `and` has to keep its space.
   if (identifierContinue.test(leftEnd) && identifierContinue.test(rightStart)) return true;
+
+  // A number before a dot is the other place this scanner and Luau's differ.
+  // scanNumber declines to open a fraction when the dot begins `..`, so
+  // re-scanning `1..` stops after `1` and reports no clash. Luau's lexer is
+  // greedier: it takes `1.` as the number and then chokes on `.2`, so
+  // `1 .. 2` has to keep a space that `a .. 2` does not need.
+  if (startsNumber(left) && rightStart === ".") return true;
 
   return scanTokenEnd(left + right, 0) !== left.length;
 }

@@ -52,6 +52,16 @@ describe("Safe mode: Luau lexical forms", () => {
     expect(verifySafeCompression(source, output)).toEqual({ success: true });
   });
 
+  // Luau's lexer takes `1.` as a number and then chokes on `.2`, so a
+  // number before a concatenation has to keep its space even though this
+  // tokenizer would split `1..2` correctly on its own.
+  it("keeps a number apart from a following concatenation", () => {
+    const source = ["print(1 .. 2)", "print(1.5 .. 2)", "local a = 1", "print(a .. 2)"].join("\n");
+    const output = compressSafe(source);
+    expect(output).toBe('print(1 ..2)print(1.5 ..2)local a=1 print(a..2)');
+    expect(verifySafeCompression(source, output)).toEqual({ success: true });
+  });
+
   it("rejects changed tokens and protected comments", () => {
     expect(verifySafeCompression("local value=1", "local value=2")).toMatchObject({ success: false });
     expect(verifySafeCompression("--!strict\nreturn 1", "return 1")).toMatchObject({ success: false });
