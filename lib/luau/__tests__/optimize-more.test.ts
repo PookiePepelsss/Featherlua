@@ -14,7 +14,7 @@ function output(source: string): string {
 describe("optimize: number literal canonicalization (shortest round-tripping form)", () => {
   it("shortens trailing/leading zeros", () => {
     expect(output("local x = 1.500000")).toBe("local a=1.5");
-    expect(output("local x = 0.100000")).toBe("local a=0.1");
+    expect(output("local x = 0.100000")).toBe("local a=.1");
     expect(output("local x = 1.0")).toBe("local a=1");
   });
 

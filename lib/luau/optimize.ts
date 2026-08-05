@@ -39,8 +39,9 @@ export function parseLuauNumber(raw: string): number | undefined {
 // with no argument emits exactly the digits needed to identify the double,
 // so both spellings parse back to the same value and the shorter one wins.
 function formatLuauNumber(n: number): string {
-  const plain = String(n);
-  if (!Number.isFinite(n)) return plain;
+  // Lua reads `.5` as happily as `0.5`, and Roblox code is full of them.
+  const plain = String(n).replace(/^0\./, ".");
+  if (!Number.isFinite(n)) return String(n);
   const exponential = n.toExponential().replace("e+", "e");
   return exponential.length < plain.length ? exponential : plain;
 }
@@ -434,6 +435,14 @@ function foldExpr(expr: Expr): Expr {
       if (negated) return foldExpr(negated);
       expr.operand = foldExpr(expr.operand);
       if (expr.operator === "-") {
+        // `-(-5)` reaches here as a negation of the negation folding already
+        // produced, and the pair cancels. Zero is left alone: negating it
+        // twice is how you write -0, and that is a value of its own.
+        const inner = expr.operand.type === "ParenExpr" ? expr.operand.expr : expr.operand;
+        if (inner.type === "UnaryExpr" && inner.operator === "-") {
+          const value = asNumberLiteral(inner.operand);
+          if (value !== undefined && value !== 0) return inner.operand;
+        }
         const v = asNumberLiteral(expr.operand);
         if (v !== undefined) {
           const folded = foldToNumberNode(-v);
@@ -671,6 +680,41 @@ function optimizeStat(stat: Stat): Stat | undefined {
         clause.body = optimizeBlock(clause.body);
       }
       if (stat.elseBody) stat.elseBody = optimizeBlock(stat.elseBody);
+
+      // A clause whose condition is known cannot be reached past: one that
+      // is always false never runs, and one that is always true means no
+      // later clause can. Trimming both before the single-clause rules
+      // below lets an elseif chain collapse the same way a lone `if` does.
+      // A label anywhere in a discarded body could be the target of a goto
+      // elsewhere, so those are left where they are.
+      const trimmed: typeof stat.clauses = [];
+      let decided = false;
+      for (const clause of stat.clauses) {
+        if (clause.cond.type === "FalseExpr" && !containsLabel(clause.body)) continue;
+        trimmed.push(clause);
+        if (clause.cond.type === "TrueExpr") {
+          decided = true;
+          break;
+        }
+      }
+      if (decided) {
+        const dropped = stat.clauses.slice(stat.clauses.indexOf(trimmed[trimmed.length - 1]) + 1);
+        const strandsLabel = dropped.some((c) => containsLabel(c.body)) ||
+          (stat.elseBody !== undefined && containsLabel(stat.elseBody));
+        if (!strandsLabel) stat.elseBody = undefined;
+        else decided = false;
+      }
+      if (trimmed.length !== stat.clauses.length || decided) {
+        if (!trimmed.length) {
+          if (stat.elseBody && !containsLabel(stat.elseBody)) {
+            return stat.elseBody.length === 0 ? undefined : { type: "DoStat", body: stat.elseBody };
+          }
+          if (!stat.elseBody) return undefined;
+        } else {
+          stat.clauses = trimmed;
+        }
+      }
+
       // Only the single-clause (no elseif) case, to keep this bounded:
       // `if COND then A [else B] end`.
       if (stat.clauses.length === 1) {

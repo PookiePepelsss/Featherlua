@@ -23,6 +23,9 @@ function needsSpace(left: Part, right: Part): boolean {
   if (IDENT_CONTINUE_RE.test(leftEnd) && IDENT_CONTINUE_RE.test(rightStart)) return true;
   if (left.isNumber && DIGIT_RE.test(leftEnd) && rightStart === ".") return true;
   if (leftEnd === "." && DIGIT_RE.test(rightStart)) return true;
+  // `..` before a number written `.5` would run together into `...5`, which
+  // lexes as a vararg followed by a stray digit.
+  if (leftEnd === "." && rightStart === ".") return true;
   if (leftEnd === "-" && rightStart === "-") return true;
   if (leftEnd === "[" && (rightStart === "[" || rightStart === "=")) return true;
   return compoundSymbolSet.has(left.text + right.text);

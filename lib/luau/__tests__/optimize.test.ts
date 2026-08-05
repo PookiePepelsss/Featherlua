@@ -109,11 +109,20 @@ describe("optimize: literal-condition branch elimination", () => {
     expect(result.output).toBe("print(2)");
   });
 
-  it("does not eliminate a multi-clause if (elseif present)", () => {
+  it("collapses an elseif chain once a condition is decided", () => {
+    // The first clause always runs, so no later one can be reached.
     const result = compressAggressive("if true then print(1) elseif false then print(2) end");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toContain("if");
+    expect(result.output).toBe("print(1)");
+  });
+
+  it("drops only the clauses that cannot run", () => {
+    const source = ["local c = f()", "if false then print(1) elseif c then print(2) else print(3) end"];
+    const result = compressAggressive(source.join("\n"));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("local a=f()if a then print(2)else print(3)end");
   });
 
   it("eliminating the surviving branch does not leak its locals into the enclosing scope", () => {
