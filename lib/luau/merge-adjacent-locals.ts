@@ -2,6 +2,7 @@ import type { Expr, LocalStat, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
 import { someExpr } from "./ast-search";
 import { isDefinitelyInert } from "./effect-analysis";
+import { functionLocalCount, SYNTHESIZED_LOCAL_CEILING } from "./alias-globals";
 
 export function mergeAdjacentLocals(resolved: ResolvedProgram): boolean {
   let changed = false;
@@ -27,12 +28,19 @@ function canMerge(a: LocalStat, b: LocalStat): boolean {
   return !b.init.some((init) => someExpr(init, (e) => e.type === "Identifier" && aIds.includes(e.symbolId)));
 }
 
+// `local a=1 local b=2` and `local a,b=1,2` bind the same two names, but
+// the merged form evaluates both values before assigning either, so it
+// needs a temporary register for each at once where the separate statements
+// needed one at a time. Luau draws locals and temporaries from the same
+// pool of 200, so in a block already holding a great many locals the merge
+// is what pushes it over.
 function mergeBlock(stats: Stat[], onChange: () => void): Stat[] {
   const processed = stats.map((s) => mergeInStat(s, onChange));
+  const crowded = functionLocalCount(processed) >= SYNTHESIZED_LOCAL_CEILING;
   const out: Stat[] = [];
   for (const stat of processed) {
     const prev = out[out.length - 1];
-    if (prev && prev.type === "LocalStat" && stat.type === "LocalStat" && canMerge(prev, stat)) {
+    if (!crowded && prev && prev.type === "LocalStat" && stat.type === "LocalStat" && canMerge(prev, stat)) {
       prev.names = prev.names.concat(stat.names);
       prev.init = prev.init.concat(stat.init);
       onChange();

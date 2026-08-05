@@ -180,3 +180,36 @@ describe("regression: identifier ending in a digit before a dot", () => {
     assertValidRoundtrip(result.output);
   });
 });
+
+// Found by running the compressor over a corpus of real executor scripts.
+// Propagating `local Format = "..."` into `Format:format(x)` leaves the
+// literal as the base of the suffix chain, and `"...":format(x)` is not
+// valid Lua. Source can never produce that shape, since it could not have
+// parsed without parentheses in the first place, so only a pass can create
+// it and only the printer can put the parentheses back.
+describe("regression: a literal propagated into a suffix base keeps parentheses", () => {
+  const CASES: [string, string][] = [
+    [
+      'local Format = "%d.lua"\nlocal url = Format:format(1)\nreturn url',
+      'local a=("%d.lua"):format(1)return a',
+    ],
+    [
+      'local Name = "abc"\nreturn Name:upper()',
+      'return("abc"):upper()',
+    ],
+    [
+      "local N = 5\nreturn N",
+      "return 5",
+    ],
+  ];
+
+  for (const [source, expected] of CASES) {
+    it(source.split("\n")[0], () => {
+      const result = compressAggressive(source);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.output).toBe(expected);
+      assertValidRoundtrip(result.output);
+    });
+  }
+});

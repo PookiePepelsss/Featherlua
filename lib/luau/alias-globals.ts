@@ -19,18 +19,58 @@ function worthAliasing(name: string, count: number, willRename: boolean) {
   return count * len + (DECL_OVERHEAD + len + name.length) < count * name.length;
 }
 
-// Luau gives each function 200 local registers. Synthesized declarations
-// have to fit in what the chunk has not already spent, or the output stops
-// compiling on exactly the large scripts this pass is meant to help.
+// Luau gives each function 200 registers, and locals are not the only
+// thing competing for them: every expression under evaluation needs
+// temporaries from the same pool. Filling all 200 with named locals leaves
+// nothing to compute with, so synthesized declarations stop well short and
+// leave the rest as headroom.
 export const LOCAL_REGISTER_LIMIT = 200;
+export const SYNTHESIZED_LOCAL_CEILING = 180;
+
+// The most locals alive at once inside a function, which is what has to
+// fit in its register file. Registers are freed when a block ends, so
+// sibling blocks take the larger of the two rather than the sum, while a
+// nested block adds to whatever is live around it. Nested functions get
+// their own file and are not counted here.
+export function functionLocalCount(stats: Stat[]): number {
+  let live = 0;
+  let peak = 0;
+  for (const stat of stats) {
+    switch (stat.type) {
+      case "LocalStat":
+        live += stat.names.length;
+        break;
+      case "LocalFunctionStat":
+        live += 1;
+        break;
+      case "NumericForStat":
+        peak = Math.max(peak, live + 1 + functionLocalCount(stat.body));
+        break;
+      case "GenericForStat":
+        peak = Math.max(peak, live + stat.names.length + functionLocalCount(stat.body));
+        break;
+      case "DoStat":
+      case "WhileStat":
+      case "RepeatStat":
+        peak = Math.max(peak, live + functionLocalCount(stat.body));
+        break;
+      case "IfStat": {
+        let branch = 0;
+        for (const clause of stat.clauses) branch = Math.max(branch, functionLocalCount(clause.body));
+        if (stat.elseBody) branch = Math.max(branch, functionLocalCount(stat.elseBody));
+        peak = Math.max(peak, live + branch);
+        break;
+      }
+      default:
+        break;
+    }
+    peak = Math.max(peak, live);
+  }
+  return peak;
+}
 
 export function chunkLocalBudget(body: Stat[]): number {
-  let used = 0;
-  for (const stat of body) {
-    if (stat.type === "LocalStat") used += stat.names.length;
-    else if (stat.type === "LocalFunctionStat") used += 1;
-  }
-  return Math.max(0, LOCAL_REGISTER_LIMIT - used);
+  return Math.max(0, SYNTHESIZED_LOCAL_CEILING - functionLocalCount(body));
 }
 
 // reflection-risks.ts covers the debug/bytecode APIs. The hazard specific

@@ -29,6 +29,17 @@ function needsSpace(left: Part, right: Part): boolean {
 }
 
 const ATOM_PRECEDENCE = 100;
+
+// Lua's `prefixexp`: the only expressions that may be indexed or called
+// without parentheses around them.
+const IS_PREFIX_EXPR = new Set<Expr["type"]>([
+  "Identifier",
+  "ParenExpr",
+  "IndexExpr",
+  "MemberExpr",
+  "CallExpr",
+  "MethodCallExpr",
+]);
 const TYPE_ASSERTION_PRECEDENCE = 9;
 
 function precedenceOf(expr: Expr): number {
@@ -307,6 +318,17 @@ export class Printer {
     if (expr.type === "ParenExpr") {
       this.emit("(");
       this.printExpr(expr.expr, 0);
+      this.emit(")");
+      return;
+    }
+    // Anything that is not already a prefixexp has to be parenthesized to
+    // sit here at all. Source never needs this, because such a base could
+    // not have parsed without parens in the first place, but a pass can
+    // create one: propagating `local F = "..."` into `F:format(x)` leaves
+    // the literal as the base, and `"...":format(x)` is not valid Lua.
+    if (!IS_PREFIX_EXPR.has(expr.type)) {
+      this.emit("(");
+      this.printExpr(expr, 0);
       this.emit(")");
       return;
     }

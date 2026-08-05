@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { compressAggressive } from "../compress-aggressive";
-import { createOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
+import { compileWithOfficialLuau, createOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
 
 let module: LuauModule;
 
@@ -69,4 +69,52 @@ describe("reused names never change behavior", () => {
       expect(after.output).toBe(before.output);
     });
   }
+});
+
+// Also from the real-script corpus: a 759KB decompiled file whose worst
+// function already held over 200 live locals. Luau draws locals and the
+// temporaries every expression needs from one pool of 200 registers, so a
+// pass that adds locals to a body already near the limit produces output
+// the compiler refuses even though the input compiled.
+describe("synthesized locals leave room for the registers Luau needs to compute with", () => {
+  function functionWith(locals: number, repeatedStrings: number) {
+    const lines = ["local function crowded()"];
+    for (let i = 0; i < locals; i += 1) lines.push(`\tlocal v${i} = {n = ${i}}`);
+    for (let g = 0; g < repeatedStrings; g += 1) {
+      for (let k = 0; k < 5; k += 1) lines.push(`\tsend("a-long-repeated-payload-${g}", ${k})`);
+    }
+    lines.push("\treturn v0", "end", "return crowded");
+    return lines.join("\n");
+  }
+
+  for (const locals of [0, 100, 170, 190]) {
+    it(`${locals} locals already in the function: output still compiles`, () => {
+      const source = functionWith(locals, 30);
+      expect(compileWithOfficialLuau(module, source).success, "fixture must compile").toBe(true);
+      const result = compressAggressive(source);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const compiled = compileWithOfficialLuau(module, result.output);
+      expect(compiled.success, `output rejected: ${compiled.error}`).toBe(true);
+    });
+  }
+
+  it("counts locals in nested blocks, not just the function's top level", () => {
+    // Locals inside a loop body are live alongside everything around them,
+    // so a budget that only looked at the top block saw a nearly empty
+    // function and filled it past the limit.
+    const lines = ["local function crowded()", "\tfor i = 1, 10 do"];
+    for (let i = 0; i < 185; i += 1) lines.push(`\t\tlocal v${i} = {n = ${i}}`);
+    for (let g = 0; g < 30; g += 1) {
+      for (let k = 0; k < 5; k += 1) lines.push(`\t\tsend("a-long-repeated-payload-${g}", ${k})`);
+    }
+    lines.push("\tend", "end", "return crowded");
+    const source = lines.join("\n");
+    expect(compileWithOfficialLuau(module, source).success, "fixture must compile").toBe(true);
+    const result = compressAggressive(source);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const compiled = compileWithOfficialLuau(module, result.output);
+    expect(compiled.success, `output rejected: ${compiled.error}`).toBe(true);
+  });
 });
