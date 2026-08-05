@@ -114,3 +114,46 @@ describe("a repair never changes what the script does", () => {
     expect(repair.fixed).toBe("print((1 + 2))\nprint(3)");
   });
 });
+
+// A file with one omission is the easy case. A file with the same omission
+// several times over is the common one, and fixing only the first leaves
+// something that still does not parse.
+describe("several instances of one omission", () => {
+  it("commas missing from a table", () => {
+    const [repair] = suggestRepairs("local t = {\n\ta = 1\n\tb = 2\n\tc = 3,\n}\nreturn t");
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.description).toContain("2 small fixes");
+    expect(repair.fixed).toBe("local t = {\n\ta = 1,\n\tb = 2,\n\tc = 3,\n}\nreturn t");
+  });
+
+  it("several blocks left open", () => {
+    const source = `local M = {}\n${Array.from(
+      { length: 4 },
+      (_, i) => `function M.f${i}()\n\tprint(${i})`,
+    ).join("\n")}\nreturn M`;
+    const [repair] = suggestRepairs(source);
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.fixed.match(/\bend\b/g) ?? []).toHaveLength(4);
+  });
+});
+
+// Decompilers emit `local t.field = v` regularly. It is not Lua: `local`
+// declares a name, and a field belongs to a table that already exists.
+describe("a local declaring a field", () => {
+  it("drops the local", () => {
+    const [repair] = suggestRepairs("local t = {}\nlocal t.Parent = game\nreturn t");
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.description).toContain("dropped a `local`");
+    expect(repair.fixed).toBe("local t = {}\nt.Parent = game\nreturn t");
+  });
+
+  it("drops several", () => {
+    const [repair] = suggestRepairs("local a = {}\nlocal a.x = 1\nlocal a.y = 2\nreturn a");
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.fixed).toBe("local a = {}\na.x = 1\na.y = 2\nreturn a");
+  });
+
+  it("leaves a real local declaration alone", () => {
+    expect(suggestRepairs("local t = {}\nlocal x = t.Parent\nreturn x")).toEqual([]);
+  });
+});

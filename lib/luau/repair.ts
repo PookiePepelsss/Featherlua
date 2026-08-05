@@ -212,7 +212,6 @@ function missingEndRepair(source: string): Repair | undefined {
       ? appendCode(fixed, `\n${indent}end`)
       : `${fixed.slice(0, at)}${indent}end\n${fixed.slice(at)}`;
   }
-  if (!parses(fixed)) return undefined;
 
   const firstLine = Math.min(...insertions.map(({ at }) => lineOf(source, Math.min(at, source.length - 1))));
   return {
@@ -257,7 +256,7 @@ function surplusEndRepair(source: string, error: ParseError): Repair | undefined
     const cutFrom = onlyThingOnTheLine ? lineStart : at;
     const cutTo = onlyThingOnTheLine && source[at + 3] === "\n" ? at + 4 : at + 3;
     const fixed = `${source.slice(0, cutFrom)}${source.slice(cutTo)}`;
-    if (parses(fixed)) {
+    if (candidates.length === 1 || parses(fixed)) {
       return { description: "removed an `end` with no block left to close", fixed, line: lineOf(source, at) };
     }
   }
@@ -274,23 +273,29 @@ function missingKeywordRepair(source: string, error: ParseError): Repair | undef
     const keyword = wanted[1];
     const separator = keyword === "," ? "" : " ";
     const fixed = `${source.slice(0, error.index)}${keyword}${separator}${source.slice(error.index)}`;
-    if (parses(fixed)) return { description: `added a missing \`${keyword}\``, fixed, line: error.line };
-    return undefined;
+    return { description: `added a missing \`${keyword}\``, fixed, line: error.line };
   }
 
   // A table or argument list missing a separator reads to the parser as a
   // closing bracket that never arrived, because the next entry is where it
   // expected `}`. The comma belongs just before that entry.
   if (/^Expected '[)\]}]'/.test(error.message)) {
-    const withComma = `${source.slice(0, error.index)}, ${source.slice(error.index)}`;
-    if (parses(withComma)) return { description: "added a missing `,`", fixed: withComma, line: error.line };
+    // The comma belongs at the end of the entry before the one the parser
+    // stopped on. When entries sit on their own lines that is the previous
+    // line's end; otherwise it is where the parser stopped.
     const beforeLine = source.lastIndexOf("\n", error.index - 1);
-    if (beforeLine > 0) {
-      const atLineEnd = `${source.slice(0, beforeLine)},${source.slice(beforeLine)}`;
-      if (parses(atLineEnd)) {
-        return { description: "added a missing `,`", fixed: atLineEnd, line: lineOf(source, beforeLine) };
-      }
+    if (beforeLine > 0 && !source.slice(beforeLine, error.index).trim()) {
+      return {
+        description: "added a missing `,`",
+        fixed: `${source.slice(0, beforeLine)},${source.slice(beforeLine)}`,
+        line: lineOf(source, beforeLine),
+      };
     }
+    return {
+      description: "added a missing `,`",
+      fixed: `${source.slice(0, error.index)}, ${source.slice(error.index)}`,
+      line: error.line,
+    };
   }
   return undefined;
 }
@@ -332,30 +337,105 @@ function unclosedBracketRepair(source: string): Repair | undefined {
  * empty list when the source parses already, or when nothing simple and
  * unambiguous accounts for the error.
  */
-export function suggestRepairs(source: string): Repair[] {
-  let error: ParseError;
+// `local t.field = v` is not Lua: `local` declares a name, and a field
+// belongs to a table that already exists. Decompilers emit it regularly,
+// and dropping the `local` is the only reading.
+function localFieldRepair(source: string, error: ParseError): Repair | undefined {
+  // The parser stops on the `.`, so what precedes it is `local` and the
+  // name it was trying to declare.
+  if (source[error.index] !== "." && source[error.index] !== "[") return undefined;
+  const before = source.slice(0, error.index);
+  const tail = before.slice(Math.max(0, before.length - 80));
+  const declaration = /(?:^|[\s;])(local[ \t]+)[A-Za-z_][A-Za-z0-9_]*$/.exec(tail);
+  if (!declaration) return undefined;
+  const localAt = before.length - (declaration[0].length - (declaration[0].startsWith("local") ? 0 : 1));
+  const fixed = `${source.slice(0, localAt)}${source.slice(localAt + "local ".length)}`;
+  return { description: "dropped a `local` from a field assignment", fixed, line: lineOf(source, localAt) };
+}
+
+function parseErrorOf(source: string): ParseError | undefined {
   try {
     parse(source);
-    return [];
+    return undefined;
   } catch (thrown) {
-    if (!(thrown instanceof ParseError)) return [];
-    error = thrown;
+    return thrown instanceof ParseError ? thrown : undefined;
   }
+}
 
-  const candidates = [
-    missingEndRepair(source),
+function candidateFixes(source: string, error: ParseError): Repair[] {
+  // The parser names the token it wanted, so the edit driven by that comes
+  // first; the structural guesses are for when it named nothing useful.
+  const found = [
     missingKeywordRepair(source, error),
+    localFieldRepair(source, error),
+    surplusEndRepair(source, error),
+    missingEndRepair(source),
     missingUntilRepair(source),
     unclosedBracketRepair(source),
-    surplusEndRepair(source, error),
   ];
-
   const seen = new Set<string>();
   const repairs: Repair[] = [];
-  for (const repair of candidates) {
-    if (!repair || seen.has(repair.fixed)) continue;
+  for (const repair of found) {
+    if (!repair || repair.fixed === source || seen.has(repair.fixed)) continue;
     seen.add(repair.fixed);
     repairs.push(repair);
   }
   return repairs;
+}
+
+// A file with one omission in it is the easy case. A file with the same
+// omission six times over is the common one, and fixing only the first
+// leaves something that still does not parse, so nothing was offered at
+// all. Each edit has to move the parser strictly further into the file
+// than the last, which both guarantees progress and stops the loop from
+// circling.
+const MAX_ITERATIVE_EDITS = 40;
+
+function repairIteratively(source: string, firstError: ParseError): Repair | undefined {
+  let current = source;
+  let error: ParseError | undefined = firstError;
+  const descriptions: string[] = [];
+
+  for (let step = 0; step < MAX_ITERATIVE_EDITS; step += 1) {
+    if (!error) {
+      const summary = new Set(descriptions);
+      return {
+        description: summary.size === 1 && descriptions.length === 1
+          ? descriptions[0]
+          : `made ${descriptions.length} small fixes (${[...summary].join("; ")})`,
+        fixed: current,
+        line: lineOf(source, Math.min(firstError.index, source.length - 1)),
+      };
+    }
+
+    const reached = error.index;
+    let advanced: Repair | undefined;
+    for (const candidate of candidateFixes(current, error)) {
+      const next = parseErrorOf(candidate.fixed);
+      // An edit that removes text shifts every later position back with it,
+      // so progress is measured against where the old error would now sit
+      // rather than against its original offset.
+      const shift = candidate.fixed.length - current.length;
+      if (!next || next.index > reached + Math.min(0, shift)) {
+        advanced = candidate;
+        error = next;
+        break;
+      }
+    }
+    if (!advanced) return undefined;
+    current = advanced.fixed;
+    descriptions.push(advanced.description);
+  }
+  return undefined;
+}
+
+export function suggestRepairs(source: string): Repair[] {
+  const error = parseErrorOf(source);
+  if (!error) return [];
+
+  const repairs = candidateFixes(source, error).filter((repair) => parses(repair.fixed));
+  if (repairs.length) return repairs;
+
+  const iterative = repairIteratively(source, error);
+  return iterative ? [iterative] : [];
 }
