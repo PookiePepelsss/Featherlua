@@ -157,3 +157,29 @@ describe("a local declaring a field", () => {
     expect(suggestRepairs("local t = {}\nlocal x = t.Parent\nreturn x")).toEqual([]);
   });
 });
+
+// One `end` too many rarely has a single answer. The parser names the first
+// that closes nothing, but removing an earlier one often parses just as
+// well and nests the code differently. Both compile, so picking the wrong
+// one is silent, and that belongs to the author rather than to a guess.
+describe("a surplus end that could be either", () => {
+  it("declines when removing a different end nests the code differently", () => {
+    const source = [
+      "local function outer()",
+      "\tif cond then",
+      "\t\tprint(1)",
+      "\tend",
+      "\tend",
+      "\tprint(2)",
+      "end",
+      "return outer",
+    ].join("\n");
+    expect(suggestRepairs(source)).toEqual([]);
+  });
+
+  it("still repairs when only one removal is possible", () => {
+    const [repair] = suggestRepairs("local x = 1\nprint(x)\nend");
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.description).toContain("removed an `end`");
+  });
+});

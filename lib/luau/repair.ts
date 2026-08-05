@@ -1,5 +1,6 @@
 import { ParseError } from "./errors";
 import { parse } from "./parser";
+import { structurallyEqual } from "./alpha-equivalence";
 
 /** A single edit that turns unparseable source into parseable source. */
 export interface Repair {
@@ -250,17 +251,56 @@ function surplusEndRepair(source: string, error: ParseError): Repair | undefined
   if (!candidates.length) return undefined;
 
   for (const at of candidates) {
-    // Take the line's whitespace with it so no blank line is left behind.
-    const lineStart = source.lastIndexOf("\n", at - 1) + 1;
-    const onlyThingOnTheLine = source.slice(lineStart, at).trim() === "";
-    const cutFrom = onlyThingOnTheLine ? lineStart : at;
-    const cutTo = onlyThingOnTheLine && source[at + 3] === "\n" ? at + 4 : at + 3;
-    const fixed = `${source.slice(0, cutFrom)}${source.slice(cutTo)}`;
+    const fixed = withoutEndAt(source, at);
     if (candidates.length === 1 || parses(fixed)) {
+      // One `end` too many rarely has one answer. The parser names the
+      // first that closes nothing, but removing an earlier one often parses
+      // just as well and nests the code differently, and both compile, so
+      // the mistake would be silent. Where a second removal also works,
+      // this is a judgement about intent and belongs to the author.
+      if (ambiguousEndRemoval(source, at)) return undefined;
       return { description: "removed an `end` with no block left to close", fixed, line: lineOf(source, at) };
     }
   }
   return undefined;
+}
+
+/** Deletes the `end` at `at`, taking its whole line when it sits alone. */
+function withoutEndAt(source: string, at: number) {
+  const lineStart = source.lastIndexOf("\n", at - 1) + 1;
+  const alone = source.slice(lineStart, at).trim() === "";
+  const cutFrom = alone ? lineStart : at;
+  const cutTo = alone && source[at + 3] === "\n" ? at + 4 : at + 3;
+  return `${source.slice(0, cutFrom)}${source.slice(cutTo)}`;
+}
+
+// Checking every `end` in a very large file would cost a parse each, so the
+// search is bounded. Above that size the parser's choice is taken as it
+// stands rather than spending seconds to second-guess it.
+const AMBIGUITY_CHECK_LIMIT = 120000;
+
+function ambiguousEndRemoval(source: string, chosen: number): boolean {
+  if (source.length > AMBIGUITY_CHECK_LIMIT) return false;
+  let chosenChunk;
+  try {
+    chosenChunk = parse(withoutEndAt(source, chosen)).chunk;
+  } catch {
+    return false;
+  }
+  for (const token of codeTokens(source)) {
+    if (token.text !== "end" || token.index === chosen) continue;
+    let otherChunk;
+    try {
+      otherChunk = parse(withoutEndAt(source, token.index)).chunk;
+    } catch {
+      continue;
+    }
+    // Removing either of two `end`s that close at the same place gives
+    // different text and the same program, which is no ambiguity at all.
+    // Only a genuinely different nesting counts.
+    if (!structurallyEqual(chosenChunk, otherChunk).equal) return true;
+  }
+  return false;
 }
 
 /** Inserts a keyword the parser said it wanted, at the point it wanted it. */
