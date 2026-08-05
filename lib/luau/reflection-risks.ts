@@ -10,7 +10,11 @@ export type ReflectionRisk =
   | "bytecode"
   | "broad";
 
-const REFLECTION_APIS: Record<string, readonly ReflectionRisk[]> = {
+// Looked up with names taken straight from the script, so this has to be a
+// Map: a plain object answers `constructor`, `toString` and every other
+// Object.prototype key with something that is not a risk list at all, and
+// a script with a field called `constructor` crashed the compressor.
+const REFLECTION_APIS = new Map<string, readonly ReflectionRisk[]>(Object.entries({
   getgc: ["broad"],
   getreg: ["broad"],
   getregistry: ["broad"],
@@ -29,12 +33,12 @@ const REFLECTION_APIS: Record<string, readonly ReflectionRisk[]> = {
   setstack: ["stack"],
   getscriptbytecode: ["bytecode"],
   dumpstring: ["bytecode"],
-};
+}));
 
-const DEBUG_ONLY_APIS: Record<string, readonly ReflectionRisk[]> = {
+const DEBUG_ONLY_APIS = new Map<string, readonly ReflectionRisk[]>(Object.entries({
   info: ["metadata"],
   getinfo: ["metadata"],
-};
+}));
 
 function stringKey(expr: Expr): string | undefined {
   if (expr.type !== "StringExpr") return undefined;
@@ -76,11 +80,11 @@ export function detectReflectionUsage(chunk: Chunk): ReflectionUsage {
   someBlock(chunk.body, (expr) => {
     const { name, debugMember } = reflectedName(expr);
     if (!name) return false;
-    const directRisks = REFLECTION_APIS[name] ?? [];
+    const directRisks = REFLECTION_APIS.get(name) ?? [];
     for (const risk of directRisks) risks.add(risk);
     if (directRisks.length) apis.add(debugMember ? `debug.${name}` : name);
     if (debugMember) {
-      const debugRisks = DEBUG_ONLY_APIS[name] ?? [];
+      const debugRisks = DEBUG_ONLY_APIS.get(name) ?? [];
       for (const risk of debugRisks) risks.add(risk);
       if (debugRisks.length) apis.add(`debug.${name}`);
     }

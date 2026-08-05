@@ -213,3 +213,29 @@ describe("regression: a literal propagated into a suffix base keeps parentheses"
     });
   }
 });
+
+// Found by running the compressor over real executor scripts: a field
+// called `constructor` is an ordinary name in Lua, but looking it up in a
+// plain JavaScript object answers with Object.prototype.constructor, which
+// is not a list of risks and is not iterable. The reflection tables are
+// Maps now.
+describe("regression: names that collide with Object.prototype", () => {
+  const NAMES = ["constructor", "toString", "valueOf", "hasOwnProperty", "isPrototypeOf", "__proto__"];
+
+  for (const name of NAMES) {
+    it(`a member called ${name}`, () => {
+      const source = `local M = require(x)\nlocal v = debug.getupvalue(M.${name}, 3)\nreturn v`;
+      const result = compressAggressive(source);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      assertValidRoundtrip(result.output);
+    });
+
+    it(`a global called ${name}`, () => {
+      const result = compressAggressive(`${name}(1)\nreturn 1`);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      assertValidRoundtrip(result.output);
+    });
+  }
+});

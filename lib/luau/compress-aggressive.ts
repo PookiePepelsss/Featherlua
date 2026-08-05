@@ -209,13 +209,24 @@ function byteLength(value: string) {
   return new TextEncoder().encode(value).length;
 }
 
+// Trying each pass switched off means compressing the whole script again
+// per option, and on a large script that is seconds of work for a fraction
+// of a percent: across a corpus of real scripts the search cost eighteen
+// times the single pass and saved 0.23%. Timing the first pass says how
+// expensive a search would be here, so small scripts still get the full
+// one and large scripts are not held up for a rounding error.
+const ROLLBACK_SEARCH_BUDGET_MS = 750;
+
 export function compressAggressive(source: string, options: Partial<AggressiveOptions> = {}): CompressResult {
   let active: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
+  const startedFirstPass = Date.now();
   let best = compressAggressiveCore(source, active);
   if (!best.ok) return best;
+  const firstPassMs = Date.now() - startedFirstPass;
 
   const rolledBack = new Set<string>();
-  let changed = true;
+  const enabledCount = OPTION_KEYS.filter((key) => active[key]).length;
+  let changed = firstPassMs * enabledCount <= ROLLBACK_SEARCH_BUDGET_MS;
   while (changed) {
     changed = false;
     for (const key of OPTION_KEYS) {
