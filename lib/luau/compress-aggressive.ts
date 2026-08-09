@@ -52,6 +52,25 @@ export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   aliasGlobals: false,
 };
 
+// Medium sits between the tokenizer and the full pipeline: it rewrites the
+// program but never touches the set of locals or what they are called. No
+// name changes, none invented, none deleted -- so anything reading a local
+// by name (`debug.getlocal`, an executor's upvalue walker, a stack trace)
+// sees exactly what it saw before. What is left is the part no runtime can
+// observe: whitespace, comments, type annotations, constant arithmetic,
+// branches that cannot run, and the shorter spelling of a form.
+export const MEDIUM_AGGRESSIVE_OPTIONS: AggressiveOptions = {
+  rename: false,
+  foldConstants: true,
+  propagateConstants: false,
+  removeUnusedLocals: false,
+  stripTypes: true,
+  mergeAdjacentLocals: true,
+  mergeAdjacentAssigns: true,
+  hoistRepeatedStrings: false,
+  aliasGlobals: false,
+};
+
 function parseError(message: string, line = 0, col = 0): CompressResult {
   return { ok: false, error: { message, line, col } };
 }

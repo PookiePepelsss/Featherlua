@@ -41,10 +41,28 @@ describe("optimize: constant folding of literal arithmetic", () => {
     expect(stat.init[0].type).toBe("UnaryExpr");
   });
 
-  it("does NOT fold %, //, or ^ (semantic-matching risk between JS and Lua)", () => {
-    expect(output("local x = 7 % 3")).toBe("local a=7%3");
-    expect(output("local x = 7 // 2")).toBe("local a=7//2");
-    expect(output("local x = 2 ^ 10")).toBe("local a=2^10");
+  it("folds %, // and ^ the way Luau computes them", () => {
+    expect(output("local x = 7 % 3")).toBe("local a=1");
+    expect(output("local x = 7 // 2")).toBe("local a=3");
+    expect(output("local x = 2 ^ 10")).toBe("local a=1024");
+  });
+
+  it("takes Luau's `%` and not C's fmod", () => {
+    // Luau defines `a % b` as `a - floor(a/b)*b`. Once the division rounds
+    // the two part company: fmod says 1 here and the runtime says 0.
+    expect(output("local x = 1e300 % 7")).toBe("local a=0");
+  });
+
+  it("leaves `%` and `//` by zero alone (no literal for inf or nan)", () => {
+    expect(output("local x = 7 % 0")).toBe("local a=7%0");
+    expect(output("local x = 7 // 0")).toBe("local a=7//0");
+  });
+
+  it("only folds `^` where the result is an exact integer", () => {
+    // pow is not required to round correctly, so anything outside the range
+    // where the true value is exactly representable is left to the runtime.
+    expect(output("local x = 2 ^ 0.5")).toBe("local a=2^.5");
+    expect(output("local x = 2 ^ 1000")).toBe("local a=2^1e3");
   });
 
   it("does not fold when an operand is not a literal", () => {

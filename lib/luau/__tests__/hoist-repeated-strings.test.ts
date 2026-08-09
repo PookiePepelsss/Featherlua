@@ -116,3 +116,22 @@ describe("hoist-repeated-strings", () => {
     expect(o).not.toContain("__str");
   });
 });
+
+// The pass used to refuse anything seen fewer than three times, which its
+// own cost model disagreed with: with renaming on, a two-character name
+// pays for the declaration once the literal is long enough.
+describe("a string seen twice", () => {
+  it("hoists when the literal is long enough to pay for the declaration", () => {
+    const s = '"a payload long enough that two uses already pay for the local"';
+    const o = out(`print(${s})\nprint(${s})`);
+    // Hoisted, so the literal itself is written once and both uses read it.
+    expect(o.indexOf("a payload")).toBe(o.lastIndexOf("a payload"));
+    expect(o).toMatch(/^local \w+="a payload[^"]*"print\(\w+\)print\(\w+\)$/);
+  });
+
+  it("leaves a short one alone, where the declaration costs more than it saves", () => {
+    const s = '"short"';
+    const o = out(`print(${s})\nprint(${s})`);
+    expect(o).toBe('print"short"print"short"');
+  });
+});

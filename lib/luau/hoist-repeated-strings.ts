@@ -41,7 +41,7 @@ export function stringLocalIsWorthKeeping(
   willRename: boolean,
   sugarCount = 0,
 ): boolean {
-  if (count < 3) return false;
+  if (count < 2) return false;
   const nameLength = assumedNameLength(willRename);
   const originalCost = count * raw.length;
   const newCost =

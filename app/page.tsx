@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { DEFAULT_AGGRESSIVE_OPTIONS, type AggressiveOptions } from "@/lib/luau/compress-aggressive";
+import {
+  DEFAULT_AGGRESSIVE_OPTIONS,
+  MEDIUM_AGGRESSIVE_OPTIONS,
+  type AggressiveOptions,
+} from "@/lib/luau/compress-aggressive";
 import type { CompressionMode, CompressionRequest, CompressionResponse } from "@/lib/luau/compression-protocol";
 
 interface Stats {
@@ -25,6 +29,12 @@ const optionLabels: Array<[keyof AggressiveOptions, string]> = [
 ];
 
 const bytes = (text: string) => new TextEncoder().encode(text).length;
+
+const MODES: Array<[CompressionMode, string, string]> = [
+  ["safe", "Safe", "Strips whitespace and comments. Every token you wrote survives."],
+  ["medium", "Medium", "Also folds constants and drops types and dead branches. No local is renamed, added or removed."],
+  ["aggressive", "Aggressive", "Everything: renames locals, propagates constants, removes what is unused."],
+];
 
 export default function Home() {
   const [source, setSource] = useState("");
@@ -58,6 +68,15 @@ export default function Home() {
     setRepair(null);
     setStats(null);
     setCopied(false);
+  }
+
+  // Each mode is a starting set of passes rather than a locked one, so
+  // switching loads that profile and leaves the checkboxes free afterwards.
+  function selectMode(next: CompressionMode) {
+    setMode(next);
+    if (next === "medium") setOptions(MEDIUM_AGGRESSIVE_OPTIONS);
+    if (next === "aggressive") setOptions(DEFAULT_AGGRESSIVE_OPTIONS);
+    invalidateResult();
   }
 
   function toggleOption(key: keyof AggressiveOptions) {
@@ -205,9 +224,9 @@ export default function Home() {
 
       {warning && <div className="warning" role="status">{warning}</div>}
 
-      {mode === "aggressive" && (
-        <fieldset className="options" aria-label="Aggressive mode passes">
-          <legend className="srOnly">Aggressive mode passes</legend>
+      {mode !== "safe" && (
+        <fieldset className="options" aria-label="Compression passes">
+          <legend className="srOnly">Compression passes</legend>
           {optionLabels.map(([key, label]) => (
             <label key={key}>
               <input type="checkbox" checked={options[key]} onChange={() => toggleOption(key)} />
@@ -219,22 +238,18 @@ export default function Home() {
 
       <div className="actions" aria-label="Actions">
         <div className="modeToggle" role="radiogroup" aria-label="Compression mode">
-          <button
-            type="button"
-            className={mode === "safe" ? "modeActive" : undefined}
-            aria-pressed={mode === "safe"}
-            onClick={() => { setMode("safe"); invalidateResult(); }}
-          >
-            Safe
-          </button>
-          <button
-            type="button"
-            className={mode === "aggressive" ? "modeActive" : undefined}
-            aria-pressed={mode === "aggressive"}
-            onClick={() => { setMode("aggressive"); invalidateResult(); }}
-          >
-            Aggressive
-          </button>
+          {MODES.map(([value, label, description]) => (
+            <button
+              key={value}
+              type="button"
+              className={mode === value ? "modeActive" : undefined}
+              aria-pressed={mode === value}
+              title={description}
+              onClick={() => selectMode(value)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         <div className="repairToggle">
           <button

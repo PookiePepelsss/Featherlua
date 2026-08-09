@@ -1,6 +1,6 @@
 import type { AggressiveOptions } from "./compress-aggressive";
 
-export type CompressionMode = "safe" | "aggressive";
+export type CompressionMode = "safe" | "medium" | "aggressive";
 
 export interface CompressionRequest {
   id: number;

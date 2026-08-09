@@ -376,7 +376,53 @@ function foldToNumberNode(value: number): Expr | undefined {
   return { type: "NumberExpr", raw: formatLuauNumber(value) };
 }
 
-const FOLDABLE_BINOPS = new Set(["+", "-", "*", "/"]);
+// Luau's `%` is not C's fmod, which is what JS `%` gives: `luai_nummod` is
+// `a - floor(a/b)*b`, and the two part company once the division rounds.
+// The runtime prints `1e300 % 7` as 0 where fmod says 1, so this has to be
+// spelled the way Luau spells it.
+function luaModulo(a: number, b: number): number {
+  return a - Math.floor(a / b) * b;
+}
+
+// `^` is `pow`, which no libm is required to round correctly, so folding it
+// in general would mean trusting two implementations to agree. Restricting
+// it to an integer base and a small non-negative integer exponent, and
+// insisting the result land on a safe integer, keeps it to the range where
+// the true value is exactly representable and every implementation returns
+// it. Luau's own compiler folds these at bytecode level anyway, so the
+// output is what it would have computed regardless.
+function exactIntegerPow(a: number, b: number): number | undefined {
+  if (!Number.isSafeInteger(a) || !Number.isInteger(b) || b < 0 || b > 64) return undefined;
+  let result = 1;
+  for (let i = 0; i < b; i += 1) {
+    result *= a;
+    if (!Number.isSafeInteger(result)) return undefined;
+  }
+  return result;
+}
+
+function foldArithmetic(operator: string, a: number, b: number): number | undefined {
+  switch (operator) {
+    case "+":
+      return a + b;
+    case "-":
+      return a - b;
+    case "*":
+      return a * b;
+    case "/":
+      return a / b;
+    case "%":
+      return b === 0 ? undefined : luaModulo(a, b);
+    case "//":
+      return b === 0 ? undefined : Math.floor(a / b);
+    case "^":
+      return exactIntegerPow(a, b);
+    default:
+      return undefined;
+  }
+}
+
+const FOLDABLE_BINOPS = new Set(["+", "-", "*", "/", "%", "//", "^"]);
 
 function foldExpr(expr: Expr): Expr {
   switch (expr.type) {
@@ -461,12 +507,8 @@ function foldExpr(expr: Expr): Expr {
         const a = asNumberLiteral(expr.left);
         const b = asNumberLiteral(expr.right);
         if (a !== undefined && b !== undefined) {
-          const result =
-            expr.operator === "+" ? a + b :
-            expr.operator === "-" ? a - b :
-            expr.operator === "*" ? a * b :
-            a / b;
-          const folded = foldToNumberNode(result);
+          const result = foldArithmetic(expr.operator, a, b);
+          const folded = result === undefined ? undefined : foldToNumberNode(result);
           if (folded) return folded;
         }
         return expr;

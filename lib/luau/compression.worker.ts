@@ -70,11 +70,14 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
       }
     }
 
-    const aggressive = request.mode === "aggressive";
-    const result = aggressive
+    // Safe is the only mode that keeps the token stream, so it is the only
+    // one the token-preservation check applies to. Medium and Aggressive
+    // both run the AST pipeline and differ only in which passes are on.
+    const parsing = request.mode !== "safe";
+    const result = parsing
       ? compressAggressive(source, request.options)
       : { ok: true as const, output: compressSafe(source) };
-    const safeCheck = result.ok && !aggressive
+    const safeCheck = result.ok && !parsing
       ? verifySafeCompression(source, result.output)
       : { success: true as const };
 

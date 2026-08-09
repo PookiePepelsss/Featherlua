@@ -63,3 +63,26 @@ describe("scratch: dead code after terminator", () => {
     expect(o).toContain("dead");
   });
 });
+
+// A merged declaration evaluates every value before assigning any of them,
+// so it needs a temporary register per name at once. Luau draws locals and
+// temporaries from one pool of 200. Counting only the block's own locals
+// missed the ones an enclosing block of the same function already held, and
+// a real script in the corpus stopped compiling because of it.
+describe("merging respects the register pool of the whole function", () => {
+  it("stops merging inside a block nested in an already crowded function", () => {
+    const outer = Array.from({ length: 170 }, (_, i) => `local v${i}=${i}`).join("\n");
+    const inner = Array.from({ length: 20 }, (_, i) => `\tlocal w${i}=${i}`).join("\n");
+    const source = `local function f()\n${outer}\ndo\n${inner}\nend\nend\nreturn f`;
+    const merged = out(source, noFold);
+    // The `w` run sits under a function already holding 170 locals, so it
+    // has to stay in short declarations rather than becoming one long one.
+    const longest = Math.max(...[...merged.matchAll(/local ([\w,]+)=/g)].map((m) => m[1].split(",").length));
+    expect(longest).toBeLessThan(20);
+  });
+
+  it("still merges freely in a function with room to spare", () => {
+    const source = Array.from({ length: 6 }, (_, i) => `local v${i}=${i}`).join("\n") + "\nprint(v0)";
+    expect(out(source, noFold)).toContain("local v0,v1,v2,v3,v4,v5=0,1,2,3,4,5");
+  });
+});
