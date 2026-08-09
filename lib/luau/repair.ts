@@ -54,6 +54,12 @@ function* codeTokens(source: string): Generator<{ text: string; index: number; l
       index = end;
       continue;
     }
+    if (char === "`") {
+      const end = interpolatedEnd(source, index);
+      line += countNewlines(source.slice(index, end));
+      index = end;
+      continue;
+    }
     if (char === "[") {
       const long = longBracketEnd(source, index);
       if (long !== undefined) {
@@ -86,6 +92,34 @@ function quotedEnd(source: string, start: number, quote: string) {
     if (source[index] === "\\") index += 2;
     else if (source[index] === quote) return index + 1;
     else index += 1;
+  }
+  return source.length;
+}
+
+/**
+ * End of the backtick string starting at `start`. Its literal text is not
+ * code, so an `end` or a stray `}` written inside one must not be counted
+ * as a closer, and the `{...}` parts balance on their own. The whole thing
+ * is therefore skipped as a unit.
+ */
+function interpolatedEnd(source: string, start: number): number {
+  let index = start + 1;
+  let depth = 0;
+  while (index < source.length) {
+    const char = source[index];
+    if (char === "\\") index += 2;
+    else if (char === "`") {
+      if (depth === 0) return index + 1;
+      index = interpolatedEnd(source, index); // a nested one, inside `{...}`
+    } else if (char === "{") {
+      depth += 1;
+      index += 1;
+    } else if (char === "}" && depth > 0) {
+      depth -= 1;
+      index += 1;
+    } else if (depth > 0 && (char === '"' || char === "'")) {
+      index = quotedEnd(source, index, char);
+    } else index += 1;
   }
   return source.length;
 }
@@ -393,6 +427,24 @@ function localFieldRepair(source: string, error: ParseError): Repair | undefined
   return { description: "dropped a `local` from a field assignment", fixed, line: lineOf(source, localAt) };
 }
 
+// A Luau decompiler will also drop a `local` in front of an expression that
+// is not a declaration at all, as in `if local t.Character then`. The
+// keyword can only begin a statement, so a parser asking for a name at one
+// has a single minimal reading: it does not belong there.
+function strayLocalRepair(source: string, error: ParseError): Repair | undefined {
+  if (!/^Expected a name/.test(error.message)) return undefined;
+  if (!source.startsWith("local", error.index)) return undefined;
+  if (/[A-Za-z0-9_]/.test(source[error.index - 1] ?? "")) return undefined;
+  let after = error.index + "local".length;
+  if (!/[ \t]/.test(source[after] ?? "")) return undefined;
+  while (/[ \t]/.test(source[after] ?? "")) after += 1;
+  return {
+    description: "dropped a stray `local`",
+    fixed: `${source.slice(0, error.index)}${source.slice(after)}`,
+    line: error.line,
+  };
+}
+
 function parseErrorOf(source: string): ParseError | undefined {
   try {
     parse(source);
@@ -408,6 +460,7 @@ function candidateFixes(source: string, error: ParseError): Repair[] {
   const found = [
     missingKeywordRepair(source, error),
     localFieldRepair(source, error),
+    strayLocalRepair(source, error),
     surplusEndRepair(source, error),
     missingEndRepair(source),
     missingUntilRepair(source),

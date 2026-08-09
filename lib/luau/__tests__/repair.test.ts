@@ -27,6 +27,21 @@ const FIXABLE: [string, string, string][] = [
   ["an unclosed brace", "local t = {a = 1, b = 2\nprint(t)", "closed an unclosed `{`"],
   ["one end too many", "local x = 1\nprint(x)\nend", "removed an `end` with no block left to close"],
   ["a missing comma between table entries", "local t = {\n\ta = 1\n\tb = 2,\n}\nreturn t", "added a missing `,`"],
+  // The text of a backtick string is not code. Counting an `end` written
+  // inside one as a closer made the file look balanced, so nothing was
+  // offered at all.
+  [
+    "a function left open around an interpolated string saying `end`",
+    "local function f(n)\n\tprint(`we end at {n}`)\nprint(f(1))",
+    "added a missing `end`",
+  ],
+  [
+    "a function left open around an interpolated string with a stray brace",
+    "local function f()\n\tprint(`a } b`)\nprint(f())",
+    "added a missing `end`",
+  ],
+  // Decompilers put `local` in front of things that are not declarations.
+  ["a stray local in a condition", "local t = {}\nif local t.Parent then\n\tprint(1)\nend", "dropped a stray `local`"],
   [
     "several functions left open at once, as a long file has",
     `local M = {}\n${Array.from(
