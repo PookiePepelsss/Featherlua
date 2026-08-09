@@ -191,7 +191,20 @@ const GENERATED_STUBS = [
   ...PROXY_NAMES.map((name) => `${name} = __proxy("${name}")`),
 ].join("\n");
 
+function preludeText() {
+  return EXECUTOR_PRELUDE.replace("__GENERATED_STUBS__", GENERATED_STUBS);
+}
+
 export function withExecutorHarness(source: string): string {
-  const prelude = EXECUTOR_PRELUDE.replace("__GENERATED_STUBS__", GENERATED_STUBS);
-  return `${prelude}\ndo\n${source}\nend\n__dumplog()`;
+  return `${preludeText()}\ndo\n${source}\nend\n__dumplog()`;
+}
+
+/**
+ * How many lines the harness sits above the script. A runtime error names
+ * the line it happened on in the combined text, which is a couple of
+ * hundred past anything the author wrote, so it has to be shifted back
+ * before it means anything to them.
+ */
+export function harnessLineOffset(): number {
+  return `${preludeText()}\ndo\n`.split("\n").length - 1;
 }

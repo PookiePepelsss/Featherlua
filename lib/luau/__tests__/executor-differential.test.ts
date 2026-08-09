@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { compressAggressive } from "../compress-aggressive";
 import { compressSafe } from "../compress-safe";
 import { createOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
-import { withExecutorHarness } from "./executor-harness";
+import { withExecutorHarness } from "../executor-harness";
 import { executorScenarios } from "./executor-scenarios";
 import { largeExecutorScripts } from "./executor-large-scripts";
 

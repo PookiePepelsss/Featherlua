@@ -21,6 +21,8 @@ Then open `http://localhost:3000`, paste a script, and press Compress.
 
 **Auto Repair** fixes a script the compiler rejects, where the mistake has only one sensible reading: a missing `end`, `then`, `do`, `until` or comma, an unclosed bracket, a stray `end`. Anything ambiguous is reported rather than guessed at. Off by default, in which case the fix is offered instead.
 
+**Check behaviour** runs your script and the compressed one side by side under a stubbed executor, about ninety Roblox and executor globals recording every call they receive, and compares what the two printed. A stub is not your executor, so a match is evidence rather than proof, but a mismatch is real. Scripts that wait on something they cannot have here are given ten seconds and then reported as inconclusive.
+
 Every input and output goes through the official Luau WebAssembly compiler before you see a result.
 
 Luau only. Lua 5.1 to 5.4 and LuaJIT are out of scope. Shebangs, `--!` directives and licence headers survive every mode.

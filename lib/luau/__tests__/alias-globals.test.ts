@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { compressAggressive } from "../compress-aggressive";
 import { createOfficialLuau, compileWithOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
 import { executorScenarios } from "./executor-scenarios";
-import { withExecutorHarness } from "./executor-harness";
+import { withExecutorHarness } from "../executor-harness";
 
 let module: LuauModule;
 
