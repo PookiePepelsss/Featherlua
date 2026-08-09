@@ -7,18 +7,30 @@
 
 export const EXECUTOR_PRELUDE = `
 local __log = {}
-local function __fmt(value)
+-- Anything whose tostring is an address has to collapse to its kind. Two
+-- runs of the same program allocate at different addresses, so leaving one
+-- in makes identical behaviour look like a difference.
+local function __fmt(value, depth)
+  depth = depth or 0
   local kind = type(value)
-  if kind == "table" then
-    local keys = {}
-    for key in pairs(value) do keys[#keys + 1] = tostring(key) end
-    table.sort(keys)
-    local parts = {}
-    for _, key in ipairs(keys) do parts[#parts + 1] = key .. "=" .. tostring(rawget(value, key)) end
-    return "{" .. table.concat(parts, ",") .. "}"
+  if kind ~= "table" then
+    if kind == "function" or kind == "thread" or kind == "userdata" then return kind end
+    return kind .. ":" .. tostring(value)
   end
-  if kind == "function" then return "fn" end
-  return kind .. ":" .. tostring(value)
+  -- A table can hold itself, and the depth cap is what stops that. Four is
+  -- past anything a stub is handed in practice.
+  if depth >= 4 then return "table" end
+  local keys = {}
+  for key in pairs(value) do keys[#keys + 1] = key end
+  -- Sorting on the rendered key rather than the key keeps mixed types
+  -- comparable. The key itself is kept, because a numeric 1 and the string
+  -- "1" are different keys and only the original one reads back.
+  table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+  local parts = {}
+  for _, key in ipairs(keys) do
+    parts[#parts + 1] = tostring(key) .. "=" .. __fmt(rawget(value, key), depth + 1)
+  end
+  return "{" .. table.concat(parts, ",") .. "}"
 end
 local function __rec(name, ...)
   local n = select("#", ...)

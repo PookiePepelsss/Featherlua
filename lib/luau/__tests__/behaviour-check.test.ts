@@ -74,3 +74,44 @@ describe("the behaviour check would catch a real difference", () => {
     expect(after.output).not.toBe(before.output);
   });
 });
+
+// The harness renders every argument a stub receives, and that rendering
+// is what the verdict is built on. Anything in it that varies between two
+// runs of the same program is a false alarm; anything it flattens away is
+// a difference nobody will be told about.
+describe("the harness renders arguments without lying either way", () => {
+  it("does not report a difference for an address that simply moved", () => {
+    // Two programs that behave identically but allocate differently. The
+    // closures land at different addresses, and that must not show.
+    const lean = 'setreadonly({ __index = function() end, __namecall = function() end }, false)';
+    const padded = `local pad = { 1, 2, 3, 4, 5, 6, 7, 8 }\nlocal _ = #pad\n${lean}`;
+    const a = run(lean);
+    const b = run(padded);
+    expect(a.success && b.success, "harness could not run the pair").toBe(true);
+    expect(a.output).toBe(b.output);
+    expect(a.output).not.toMatch(/0x[0-9a-f]+/i);
+  });
+
+  it("sees the contents of an array argument", () => {
+    // Keys used to be stringified before being read back, so `rawget(t, "1")`
+    // returned nil and every array looked the same as every other.
+    const a = run("setclipboard({ 10, 20 })");
+    const b = run("setclipboard({ 30, 40 })");
+    expect(a.success && b.success).toBe(true);
+    expect(a.output).not.toBe(b.output);
+    expect(a.output).toContain("10");
+  });
+
+  it("sees a nested table rather than flattening it to an address", () => {
+    const a = run("setclipboard({ cfg = { fov = 60 } })");
+    const b = run("setclipboard({ cfg = { fov = 90 } })");
+    expect(a.success && b.success).toBe(true);
+    expect(a.output).not.toBe(b.output);
+  });
+
+  it("survives a table that contains itself", () => {
+    const cyclic = "local t = {} t.self = t setclipboard(t)";
+    const result = run(cyclic);
+    expect(result.success, `cyclic table broke the harness: ${result.error}`).toBe(true);
+  });
+});

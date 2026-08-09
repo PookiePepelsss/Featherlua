@@ -67,23 +67,32 @@ export default function Home() {
   // nothing the page needs, so the timeout simply throws it away.
   const BEHAVIOUR_TIMEOUT_MS = 10_000;
 
-  function stopBehaviourCheck() {
+  function clearBehaviourTimer() {
     if (behaviourTimer.current !== null) clearTimeout(behaviourTimer.current);
     behaviourTimer.current = null;
+  }
+
+  function discardBehaviourWorker() {
+    clearBehaviourTimer();
     behaviourWorker.current?.terminate();
     behaviourWorker.current = null;
   }
 
   function checkBehaviour() {
-    stopBehaviourCheck();
+    clearBehaviourTimer();
     setBehaviour({ state: "running", detail: "" });
     const id = ++requestId.current;
-    const worker = new Worker(new URL("../lib/luau/behaviour.worker.ts", import.meta.url), { type: "module" });
+    // The worker is kept between checks. It holds a compiled copy of the
+    // Luau runtime, and building that again per click is most of the wait.
+    // Only a worker stuck inside a script is thrown away.
+    const worker =
+      behaviourWorker.current ??
+      new Worker(new URL("../lib/luau/behaviour.worker.ts", import.meta.url), { type: "module" });
     behaviourWorker.current = worker;
     worker.onmessage = (event: MessageEvent<BehaviourResponse>) => {
       if (event.data.id !== id) return;
       const result = event.data;
-      stopBehaviourCheck();
+      clearBehaviourTimer();
       if (result.verdict === "same") {
         setBehaviour({
           state: "same",
@@ -94,11 +103,11 @@ export default function Home() {
       }
     };
     worker.onerror = (event) => {
-      stopBehaviourCheck();
+      discardBehaviourWorker();
       setBehaviour({ state: "inconclusive", detail: event.message || "The behaviour worker failed." });
     };
     behaviourTimer.current = setTimeout(() => {
-      stopBehaviourCheck();
+      discardBehaviourWorker();
       setBehaviour({
         state: "inconclusive",
         detail: `Neither run finished within ${BEHAVIOUR_TIMEOUT_MS / 1000} seconds, so this proves nothing either way. A script that waits on something it cannot have here will do that.`,
@@ -109,7 +118,6 @@ export default function Home() {
   }
 
   function invalidateResult() {
-    stopBehaviourCheck();
     setBehaviour(null);
     if (activeRequest.current !== null) {
       workerRef.current?.terminate();
