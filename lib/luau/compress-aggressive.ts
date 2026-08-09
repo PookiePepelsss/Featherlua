@@ -236,7 +236,32 @@ function byteLength(value: string) {
 // one and large scripts are not held up for a rounding error.
 const ROLLBACK_SEARCH_BUDGET_MS = 750;
 
+// The parser, the passes, the printer and the equivalence check all walk
+// the tree by recursion, so a script nested past a few thousand levels
+// exhausts the JS stack. Obfuscators produce exactly that: a concatenation
+// of ten thousand pieces is a right spine ten thousand deep. What surfaced
+// was the engine's own wording, which reads as a crash. Safe mode is a
+// loop over tokens and has no depth limit at all, so there is somewhere
+// useful to send people.
+function isStackExhaustion(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return /call stack size exceeded|too much recursion|stack overflow/i.test(message);
+}
+
+const TOO_DEEP =
+  "This script nests too deeply to parse: an expression or block runs thousands of levels down, " +
+  "which is usually an obfuscator's doing. Safe mode has no depth limit and will still compress it.";
+
 export function compressAggressive(source: string, options: Partial<AggressiveOptions> = {}): CompressResult {
+  try {
+    return compressAggressiveSearching(source, options);
+  } catch (error) {
+    if (isStackExhaustion(error)) return parseError(TOO_DEEP);
+    throw error;
+  }
+}
+
+function compressAggressiveSearching(source: string, options: Partial<AggressiveOptions>): CompressResult {
   let active: AggressiveOptions = { ...DEFAULT_AGGRESSIVE_OPTIONS, ...options };
   const startedFirstPass = Date.now();
   let best = compressAggressiveCore(source, active);
