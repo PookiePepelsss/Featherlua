@@ -60,7 +60,9 @@ function firstDifference(before: string, after: string) {
     if (b[i] === undefined) return `${where}: the compressed one stopped here, the original went on with \`${a[i]}\``;
     return `${where}: original \`${a[i]}\`, compressed \`${b[i]}\``;
   }
-  return "the two runs printed the same lines in a different order";
+  // Only reachable if the two strings were equal, which the caller has
+  // already ruled out.
+  return "the two runs differ in a way this could not pin down";
 }
 
 self.onmessage = async (event: MessageEvent<BehaviourRequest>) => {

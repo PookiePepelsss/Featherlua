@@ -17,16 +17,22 @@ interface Stats {
   durationMs: number;
 }
 
-const optionLabels: Array<[keyof AggressiveOptions, string]> = [
-  ["rename", "Rename locals"],
-  ["foldConstants", "Fold constants"],
-  ["propagateConstants", "Propagate constants"],
-  ["removeUnusedLocals", "Remove unused locals"],
-  ["stripTypes", "Strip types"],
-  ["mergeAdjacentLocals", "Merge adjacent locals"],
-  ["mergeAdjacentAssigns", "Merge adjacent assigns"],
-  ["hoistRepeatedStrings", "Dedupe repeated strings"],
-  ["aliasGlobals", "Alias repeated globals"],
+// The third entry is what the checkbox says on hover. Nine bare labels
+// tell nobody which one to switch off when a script misbehaves.
+const optionLabels: Array<[keyof AggressiveOptions, string, string]> = [
+  ["rename", "Rename locals", "Gives every local the shortest name free at that point. Much the largest saving, and the one a debug API reading locals by name would notice."],
+  ["foldConstants", "Fold constants", "Works out the arithmetic between literals, drops branches that cannot run, and picks the shorter spelling of a form."],
+  ["propagateConstants", "Propagate constants", "Replaces a local that never changes with the value it holds."],
+  ["removeUnusedLocals", "Remove unused locals", "Drops declarations nothing reads, along with the work of computing them where that is free of side effects."],
+  ["stripTypes", "Strip types", "Removes type annotations. Luau erases them at runtime, so nothing observes their absence."],
+  ["mergeAdjacentLocals", "Merge adjacent locals", "Turns a run of declarations into one, held back where the register pool is tight."],
+  ["mergeAdjacentAssigns", "Merge adjacent assigns", "Turns a run of assignments into one."],
+  ["hoistRepeatedStrings", "Dedupe repeated strings", "Binds a literal used several times to a local, where that costs fewer bytes than repeating it."],
+  [
+    "aliasGlobals",
+    "Alias repeated globals",
+    "Binds a repeated global to a local, for the bytes: it makes no difference to speed, which is worth saying because localising globals is old Lua advice that Luau's import resolution has already taken care of. Off by default because an alias keeps whatever the global held when the script started, so anything that hooks or replaces it later is missed.",
+  ],
 ];
 
 const bytes = (text: string) => new TextEncoder().encode(text).length;
@@ -304,8 +310,8 @@ export default function Home() {
       {mode !== "safe" && (
         <fieldset className="options" aria-label="Compression passes">
           <legend className="srOnly">Compression passes</legend>
-          {optionLabels.map(([key, label]) => (
-            <label key={key}>
+          {optionLabels.map(([key, label, description]) => (
+            <label key={key} title={description}>
               <input type="checkbox" checked={options[key]} onChange={() => toggleOption(key)} />
               {label}
             </label>
