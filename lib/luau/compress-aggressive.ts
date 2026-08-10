@@ -52,13 +52,10 @@ export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   aliasGlobals: false,
 };
 
-// Medium sits between the tokenizer and the full pipeline: it rewrites the
-// program but never touches the set of locals or what they are called. No
-// name changes, none invented, none deleted -- so anything reading a local
-// by name (`debug.getlocal`, an executor's upvalue walker, a stack trace)
-// sees exactly what it saw before. What is left is the part no runtime can
-// observe: whitespace, comments, type annotations, constant arithmetic,
-// branches that cannot run, and the shorter spelling of a form.
+// Medium leaves the locals alone: none renamed, invented or deleted, so
+// anything reading one by name still finds it. What it does change is the
+// part no runtime can see, such as types, constant arithmetic and branches
+// that cannot run.
 export const MEDIUM_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   rename: false,
   foldConstants: true,

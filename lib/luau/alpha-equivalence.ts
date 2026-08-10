@@ -27,15 +27,12 @@ function peelCosmeticParens(expr: Expr): Expr {
   return current;
 }
 
-// Lockstep structural walk of two ASTs. Exact match required on node `type`
-// and every non-identifier field (operators, member/method names, table
-// keys, type-span token text, label names). Identifier/declaration names
-// are compared via alpha-equivalence: two symbolId maps assign a shared
-// canonical index the first time each side's symbol is *declared*; every
-// later reference on either side must resolve to the same canonical index.
-// This lets `local a = 1` and `local xyz = 1` compare equal (post-rename)
-// while still catching a resolver bug that wrongly treats a local as a
-// global (isGlobal/unresolved identifiers are compared by literal name).
+// Walks two trees in step. Everything but local names must match exactly.
+// Locals are matched by shape instead: each side numbers its symbols as
+// they are declared, and every later reference must land on the same
+// number. So `local a = 1` and `local xyz = 1` compare equal after
+// renaming, while a local wrongly treated as a global still fails, since
+// globals are compared by their actual name.
 class Comparator {
   private mapA = new Map<number, number>();
   private mapB = new Map<number, number>();
@@ -296,13 +293,9 @@ class Comparator {
   }
 
   private expr(rawA: Expr, rawB: Expr) {
-    // The printer legitimately collapses redundant nested ParenExpr layers
-    // (e.g. `((({a=1})))` prints with a single, or zero, paren layer,
-    // whichever is load-bearing) -- so the number of ParenExpr wrappers
-    // around an expression is not semantically meaningful and must be
-    // normalized away before structural comparison, using the exact same
-    // "is this paren load-bearing" rule the printer uses (see
-    // printer.ts's printPrefixExprBase / general ParenExpr handling).
+    // The printer drops parens that carry no meaning, so how many wrap an
+    // expression is not significant and is normalised away first, by the
+    // same load-bearing rule the printer uses.
     const a = peelCosmeticParens(rawA);
     const b = peelCosmeticParens(rawB);
     if (a.type !== b.type) this.fail(`expr type '${a.type}' vs '${b.type}'`);

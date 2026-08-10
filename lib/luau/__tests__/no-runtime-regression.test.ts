@@ -4,15 +4,11 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { compressAggressive, MEDIUM_AGGRESSIVE_OPTIONS } from "../compress-aggressive";
 import { createOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
 
-// Nothing else here checks that the output still runs at the same speed.
-// Every pass is chosen for bytes, and a rewrite that saves a few of them
-// while costing a hot loop real time would be a bad trade nobody would
-// notice: the size figure would improve and the tests would stay green.
-//
-// Measured, compression is neutral, between 0.97x and 1.05x on the shapes
-// below, so the bar here is only that it never becomes markedly slower.
-// The margin is wide on purpose. This is a guard against a future pass
-// pessimising something, not a benchmark.
+// Every pass is chosen for bytes, so a rewrite that saved a few while
+// costing a hot loop real time would improve the size figure and keep the
+// tests green. Compression measures neutral, 0.97x to 1.05x, and the bar
+// here is only that it never gets markedly slower. A guard, not a
+// benchmark, so the margin is deliberately wide.
 
 let module: LuauModule;
 

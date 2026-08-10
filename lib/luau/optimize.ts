@@ -384,13 +384,10 @@ function luaModulo(a: number, b: number): number {
   return a - Math.floor(a / b) * b;
 }
 
-// `^` is `pow`, which no libm is required to round correctly, so folding it
-// in general would mean trusting two implementations to agree. Restricting
-// it to an integer base and a small non-negative integer exponent, and
-// insisting the result land on a safe integer, keeps it to the range where
-// the true value is exactly representable and every implementation returns
-// it. Luau's own compiler folds these at bytecode level anyway, so the
-// output is what it would have computed regardless.
+// `^` is `pow`, which no libm has to round correctly, so folding it in
+// general means trusting two implementations to agree. Integer base, small
+// non-negative exponent and a safe-integer result keeps it to the range
+// where the true value is exact and everyone returns it.
 function exactIntegerPow(a: number, b: number): number | undefined {
   if (!Number.isSafeInteger(a) || !Number.isInteger(b) || b < 0 || b > 64) return undefined;
   let result = 1;

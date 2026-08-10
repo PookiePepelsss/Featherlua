@@ -1,12 +1,10 @@
 /// <reference lib="webworker" />
 
 // Runs the script and its compressed form side by side under the executor
-// harness and compares what they printed. This lives in a worker of its
-// own, separate from the compression worker, for one reason: a script with
-// a loop that never ends will not return from `luau_execute`, and the only
-// way out of that is for the page to terminate the whole worker. Losing a
-// throwaway worker costs nothing; losing the compression worker would take
-// the loaded compiler with it.
+// harness and compares what they printed. It gets its own worker because a
+// script that loops forever never returns from `luau_execute`, and killing
+// the worker is the only way out. This one is disposable; the compression
+// worker would take the loaded compiler with it.
 
 import type { BehaviourRequest, BehaviourResponse } from "./behaviour-protocol";
 import { harnessLineOffset, withExecutorHarness } from "./executor-harness";

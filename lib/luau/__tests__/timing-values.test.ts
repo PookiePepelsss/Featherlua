@@ -9,16 +9,10 @@ import {
 import { compressSafe } from "../compress-safe";
 import { createOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
 
-// Waits, tween durations, easing alphas and loop steps are the numbers a
-// user notices immediately if they shift, and several passes touch numeric
-// literals: folding computes them, canonicalising reprints them, and
-// propagation moves them somewhere else. A value that comes back as
-// 0.30000000000000004 instead of 0.3, or a wait that stops happening
-// because nothing read its result, is the kind of change that would be
-// blamed on the executor rather than on this.
-//
-// Everything below prints with %.17g, which is enough digits to name a
-// double exactly, so a difference of one bit shows up as a text mismatch.
+// Waits, tween durations and loop steps are what a user notices the moment
+// they shift, and several passes touch numeric literals. Everything below
+// prints at %.17g, enough digits to name a double exactly, so one bit of
+// difference shows as a text mismatch.
 
 let module: LuauModule;
 

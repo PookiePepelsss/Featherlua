@@ -144,17 +144,16 @@ function scanTokenEnd(source: string, cursor: number) {
   return cursor + (matched?.length ?? 1);
 }
 
-// A hand-maintained rule list can only cover the merges someone thought of,
-// and it missed several (`+` then `==` re-lexes to `+=` `=`; `..` then `..`
-// becomes `...` `.`). Instead, join the two tokens and re-scan: if the first
-// token of the joined text is not exactly `left`, the pair needs separating.
-// Comment and long-bracket openers are checked first because those are not
-// tokens at all, so re-scanning cannot see them.
 /** True when this token is a numeric literal rather than a name or symbol. */
 function startsNumber(token: string) {
   return digit.test(token[0] ?? "") || (token[0] === "." && digit.test(token[1] ?? ""));
 }
 
+// A hand-written rule list only covers the merges someone thought of, and
+// it missed several (`+` then `==` re-lexes as `+=` `=`). So join the pair
+// and re-scan: if the first token of the joined text is not exactly `left`,
+// they need separating. Comment and long-bracket openers are checked first,
+// since those are not tokens and re-scanning cannot see them.
 function needsSpace(left: string, right: string) {
   const leftEnd = left.at(-1) ?? "";
   const rightStart = right[0] ?? "";

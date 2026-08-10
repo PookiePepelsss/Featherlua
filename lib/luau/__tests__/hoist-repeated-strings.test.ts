@@ -67,17 +67,10 @@ describe("hoist-repeated-strings", () => {
   });
 
   it("is idempotent across re-compression, even with two competing hoist candidates", () => {
-    // Regression: re-parsing already-hoisted output turned `local x =
-    // "..."` back into an ordinary-looking candidate for
-    // propagateConstants (the "synthetic" marker doesn't survive being
-    // printed as text), which inlined it right back out -- while the
-    // *other* repeated string, now freshly duplicated 3x in the text,
-    // became eligible for hoisting instead. Every re-compress just swapped
-    // which string was hoisted, so output oscillated between two
-    // different sizes forever instead of settling. Fixed by making
-    // propagateConstants respect the same byte-savings threshold
-    // hoist-repeated-strings.ts uses, so it can never undo a hoist that
-    // pass would make again on the next pass.
+    // Regression: compressing the output again used to inline the hoisted
+    // string and hoist the other one instead, swapping the two forever
+    // rather than settling. Fixed by giving propagateConstants the same
+    // savings threshold, so it cannot undo a hoist this pass would redo.
     const src =
       'local function greet()\n' +
       '  print("this is a fairly long repeated payload one")\n' +

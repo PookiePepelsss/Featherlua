@@ -170,22 +170,11 @@ function collectRenameStats(chunk: Chunk) {
   return { globals, references };
 }
 
-// Scope-aware name reuse: two symbols can safely share a generated name if
-// neither's declaring scope is an ancestor of the other's, because Lua's
-// static lexical scoping means they're never simultaneously visible/live --
-// regardless of runtime call order, even across escaping closures (a
-// closure's free-variable references always resolve to where it was
-// *defined*, never where/when it's *called*). Implemented as a DFS over the
-// scope tree with an inherited "next free index" counter: a scope's own
-// declarations consume consecutive indices starting from what its parent
-// had already used, so no descendant ever collides with an ancestor's
-// names -- but sibling/cousin scopes independently restart from the same
-// inherited base, so they naturally reuse the same short names. This is
-// strictly more names-reused (smaller output) than the previous
-// one-globally-unique-name-per-symbol scheme, while remaining provably
-// collision-free by construction. compress-aggressive.ts's self-validation
-// (re-parse + alpha-equivalence check) is a backstop against any mistake
-// here, same as it would be for the simpler scheme.
+// Two locals can share a name as long as neither's scope contains the
+// other's, since then they are never in view at the same time. A DFS
+// carrying a "next free index" down the tree gets that for free: children
+// continue from where the parent stopped, so no descendant collides with an
+// ancestor, while siblings restart from the same number and reuse names.
 export function computeRenameMap(resolved: ResolvedProgram, pinnedNames?: Set<string>): Map<number, string> {
   const { globals, references } = collectRenameStats(resolved.chunk);
   // Type spans are reprinted verbatim, so a local a surviving annotation

@@ -406,11 +406,6 @@ function unclosedBracketRepair(source: string): Repair | undefined {
   return { description, fixed: atEnd, line: lineOf(source, stack[0].index) };
 }
 
-/**
- * Offers repairs for source that does not parse, best first. Returns an
- * empty list when the source parses already, or when nothing simple and
- * unambiguous accounts for the error.
- */
 // `local t.field = v` is not Lua: `local` declares a name, and a field
 // belongs to a table that already exists. Decompilers emit it regularly,
 // and dropping the `local` is the only reading.
@@ -522,6 +517,10 @@ function repairIteratively(source: string, firstError: ParseError): Repair | und
   return undefined;
 }
 
+/**
+ * Repairs for source that will not parse, best first. Empty when it parses
+ * already, or when nothing simple and unambiguous explains the error.
+ */
 export function suggestRepairs(source: string): Repair[] {
   const error = parseErrorOf(source);
   if (!error) return [];

@@ -1,15 +1,9 @@
 import type { Chunk, Expr, FunctionExpr, Stat, TypeSpan } from "./ast";
 
-// Removes all type-annotation information from the AST: param/local type
-// annotations, function generics/return/vararg types, `type`/`export type`
-// alias declarations entirely, and `expr :: Type` assertions (replaced by
-// the expression they wrap). Safe for Aggressive mode because Luau types
-// are erased at compile time -- they have zero effect on runtime behavior,
-// so this can never change what the code does, only how much of it
-// survives for static analysis / IDE tooling. Mutates the tree in place
-// (reassigning fields where a node is replaced) and returns it; called
-// before printing, so the printer needs no awareness of this -- it already
-// only emits a type field when present.
+// Strips every annotation from the tree: types on params and locals,
+// generics, return and vararg types, `type` aliases, and `expr :: Type`
+// assertions. Luau erases types at compile time, so this cannot change what
+// the code does. Mutates in place and returns the same chunk.
 export function stripTypeInfo(chunk: Chunk): Chunk {
   onSpan = () => undefined;
   dropAliases = true;
@@ -17,13 +11,10 @@ export function stripTypeInfo(chunk: Chunk): Chunk {
   return chunk;
 }
 
-// Every name mentioned anywhere in a type annotation. When annotations are
-// being kept, a local named here has to keep both its name and its
-// declaration: type spans are reprinted verbatim, so renaming or deleting
-// the local it refers to leaves the annotation pointing at nothing. Types
-// are erased at runtime, so this costs nothing at the default settings
-// (where the annotations are gone anyway) and only applies when the user
-// asks to keep them.
+// Every name mentioned in a type annotation. Spans are reprinted verbatim,
+// so when annotations are kept, the locals they name must keep their names
+// and their declarations or the annotation points at nothing. Only applies
+// when the user asks to keep types; by default there are none left.
 export function collectTypeSpanNames(chunk: Chunk): Set<string> {
   const names = new Set<string>();
   onSpan = (span) => {

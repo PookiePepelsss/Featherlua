@@ -28,19 +28,12 @@ function canMerge(a: LocalStat, b: LocalStat): boolean {
   return !b.init.some((init) => someExpr(init, (e) => e.type === "Identifier" && aIds.includes(e.symbolId)));
 }
 
-// `local a=1 local b=2` and `local a,b=1,2` bind the same two names, but
-// the merged form evaluates every value before assigning any of them, so it
-// needs a temporary register per name at once where the separate statements
-// needed one at a time. Luau draws locals and temporaries from the same
-// pool of 200, so a long run merged into one declaration is what pushes a
-// crowded function over.
-//
-// `outerLive` is how many locals of the same function are already bound
-// where this block starts. Measuring only the block's own locals was the
-// hole: a short block nested inside a function holding a hundred and fifty
-// of them looked to have room it did not have, and a real script in the
-// corpus stopped compiling because of it. Function bodies start a fresh
-// pool, so they pass zero.
+// A merged declaration evaluates every value before assigning any, so it
+// needs a temporary register per name at once. Luau draws locals and
+// temporaries from one pool of 200, so a long run can overflow a crowded
+// function. `outerLive` counts the locals of the same function already
+// bound above this block; counting only the block's own missed those and
+// broke a real script. Function bodies start fresh, so they pass zero.
 function mergeBlock(stats: Stat[], onChange: () => void, outerLive: number): Stat[] {
   const processed: Stat[] = [];
   let live = outerLive;

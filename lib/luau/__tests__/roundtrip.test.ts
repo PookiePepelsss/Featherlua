@@ -10,15 +10,11 @@ import type { LocalStat } from "../ast";
 describe("round-trip: alpha-equivalence after renaming", () => {
   for (const fixture of loadFixtures()) {
     it(fixture.name, () => {
-      // The "original" baseline must go through the exact same AST
-      // transforms Aggressive mode applies (folding, dead-branch/dead-
-      // declaration elimination, type stripping) -- the invariant under
-      // test is "equivalent modulo intentional, behavior-preserving
-      // simplification", not "byte-identical AST". Calling the same
-      // transformForAggressive() the real pipeline uses (rather than
-      // re-listing the transforms here by hand) is what keeps this test
-      // from silently drifting out of sync the next time a transform is
-      // added or reordered.
+      // The baseline runs through the same transforms the real pipeline
+      // does, since what is being tested is equivalence after intentional
+      // simplification, not an identical tree. Reusing
+      // transformForAggressive rather than relisting the passes here keeps
+      // it from drifting when one is added or reordered.
       const result = compressAggressive(fixture.source);
       expect(result.ok).toBe(true);
       if (!result.ok) return;

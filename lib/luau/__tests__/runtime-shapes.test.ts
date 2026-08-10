@@ -3,19 +3,12 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
 
-// Every pass in this compressor trades bytes. None of them makes a script
-// run faster, and which rewrites would keeps coming up. The README's Speed
-// table answers that from measurement rather than from folk wisdom, and
-// this is what keeps the table honest as the runtime asset moves.
-//
-// The timing is taken with os.clock inside Luau, so compiling the script
-// and crossing the wasm boundary are not counted. Only the direction and a
-// generous margin are asserted; the exact multiples belong in the README,
-// not in a test that would then fail on a quiet machine.
-//
-// What is measured is the standalone Luau interpreter built to
-// WebAssembly, not Roblox, which has native codegen and its own fast
-// paths. The direction transfers. The multiples do not.
+// Backs the README's Speed table with measurement rather than folk wisdom.
+// Timing comes from os.clock inside Luau, so compiling and crossing the
+// wasm boundary are not counted. Only direction is asserted, with a wide
+// margin, so a busy machine cannot fail it; the multiples live in the
+// README. This is the plain interpreter, not Roblox, so the direction
+// transfers and the exact numbers do not.
 
 let module: LuauModule;
 
@@ -44,12 +37,10 @@ print(string.format("%.6f", best))
 let warmed = false;
 
 /**
- * How many times faster the rewrite is. Below 1 means it is slower.
- *
- * The runtime is burned in first, and each side is measured in both
- * orders, because neither is optional: without them whichever pair ran
- * first pays for every lazily built path in the runtime and reads as a
- * win. Localising a global measured 1.5x that way and is really 1.04x.
+ * How many times faster the rewrite is. Below 1 means slower. Warming up
+ * and measuring both orders are not optional: whichever ran first
+ * otherwise pays for the runtime's lazily built paths and looks like a
+ * win. Localising a global read as 1.5x that way, and is really 1.04x.
  */
 function speedup(plain: string, rewritten: string, reps: number): number {
   if (!warmed) {

@@ -98,13 +98,8 @@ export function someBlock(stats: Stat[], predicate: (e: Expr) => boolean): boole
 
 export const isCallExpr = (e: Expr): boolean => e.type === "CallExpr" || e.type === "MethodCallExpr";
 
-// Every name the program binds or reads, so a pass that synthesizes a local
-// can pick a name that shadows nothing. Member names and table keys are
-// excluded on purpose: they live in a different namespace and can never be
-// captured by a local declaration.
-// Visits every statement in the subtree, including ones inside function
-// bodies that hang off expressions. someStat only ever hands back
-// expressions, so passes that need statement-level context use this.
+// Visits every statement in the subtree, including those in function
+// bodies hanging off expressions.
 export function forEachStat(stats: Stat[], fn: (stat: Stat) => void) {
   for (const stat of stats) {
     fn(stat);
@@ -134,6 +129,9 @@ export function forEachStat(stats: Stat[], fn: (stat: Stat) => void) {
   }
 }
 
+// Every name the program binds or reads, so a pass synthesizing a local can
+// pick one that shadows nothing. Member names and table keys are left out:
+// they are a separate namespace and a local can never capture them.
 export function collectNames(stats: Stat[], into = new Set<string>()): Set<string> {
   // someStat/someExpr already reach every expression in the subtree,
   // including nested function bodies, so one sweep covers all references

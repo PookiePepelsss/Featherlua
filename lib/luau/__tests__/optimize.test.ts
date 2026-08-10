@@ -144,18 +144,10 @@ describe("optimize: literal-condition branch elimination", () => {
   });
 
   it("eliminating the surviving branch does not leak its locals into the enclosing scope", () => {
-    // The critical correctness case: a local declared inside the surviving
-    // branch must stay confined to it (via the `do...end` wrapper), not get
-    // spliced directly into the parent block -- otherwise a later reference
-    // to the same name would wrongly resolve to it instead of staying a
-    // global reference, silently changing behavior. compressAggressive
-    // returning ok:true here is itself the proof: self-validation compares
-    // the output's resolved references against the original's, so a leak
-    // (print(x) resolving to a local instead of staying global) would have
-    // been caught as a structural mismatch and rejected.
-    // removeUnusedLocals disabled: this test isolates dead-branch
-    // elimination's own scope-preservation, not whether the (separately
-    // tested) unused-locals pass would also clean up the do-block further.
+    // A local from the surviving branch must stay inside a `do...end`. Let
+    // loose in the parent block, the later `print(x)` would resolve to it
+    // instead of staying a global. ok:true is the proof: self-validation
+    // would reject that as a structural mismatch.
     const result = compressAggressive("if true then local x = 5 end\nprint(x)", { removeUnusedLocals: false });
     expect(result.ok).toBe(true);
     if (!result.ok) return;

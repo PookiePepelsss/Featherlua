@@ -453,13 +453,10 @@ class Parser {
     return left;
   }
 
-  // Unary binds looser than `^` but tighter than every other binop: its
-  // operand recurses at UNARY_PRECEDENCE (7), which is high enough that the
-  // generic loop above still consumes a following `^` (level 8) before
-  // returning, but low enough to stop before `*`/`/`/etc (level 6, already
-  // below minPrec so a bare `-x*y` still splits into `(-x)*y` -- wait: `*`
-  // is level 6 < 7, so the loop breaks before consuming it, leaving `*y` for
-  // the OUTER call, giving `(-x)*y`, matching real Lua semantics.
+  // Unary binds looser than `^` and tighter than everything else. Its
+  // operand parses at precedence 7, so the loop above still takes a
+  // following `^` (level 8) but stops before `*` (level 6), leaving that to
+  // the caller. `-x^2` is `-(x^2)` and `-x*y` is `(-x)*y`, as in Lua.
   private parseUnary(): Expr {
     const tok = this.current();
     const isUnop = (tok.kind === "Keyword" && tok.text === "not") ||
