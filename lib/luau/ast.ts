@@ -73,16 +73,12 @@ export interface WhileStat {
   type: "WhileStat";
   cond: Expr;
   body: Stat[];
-  /** Line the loop opens on, for reporting only. Passes ignore it. */
-  line?: number;
 }
 
 export interface RepeatStat {
   type: "RepeatStat";
   body: Stat[];
   cond: Expr;
-  /** Line the loop opens on, for reporting only. Passes ignore it. */
-  line?: number;
 }
 
 export interface IfStat {
@@ -99,8 +95,6 @@ export interface NumericForStat {
   stop: Expr;
   step?: Expr;
   body: Stat[];
-  /** Line the loop opens on, for reporting only. Passes ignore it. */
-  line?: number;
 }
 
 export interface GenericForStat {
@@ -109,8 +103,6 @@ export interface GenericForStat {
   symbolIds?: number[];
   exprs: Expr[];
   body: Stat[];
-  /** Line the loop opens on, for reporting only. Passes ignore it. */
-  line?: number;
 }
 
 export interface ReturnStat {

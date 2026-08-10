@@ -4,9 +4,6 @@ import { compressAggressive } from "./compress-aggressive";
 import type { CompressionRequest, CompressionResponse } from "./compression-protocol";
 import { compressSafe, verifySafeCompression } from "./compress-safe";
 import { suggestRepairs } from "./repair";
-import { findHotPaths } from "./hot-paths";
-import { parse } from "./parser";
-import { resolveScopes } from "./scope-resolver";
 import {
   compileWithOfficialLuau,
   createOfficialLuau,
@@ -44,19 +41,6 @@ function findRepair(module: LuauModule, source: string) {
     }
   }
   return undefined;
-}
-
-// Advice about the script's own speed, which is a separate question from
-// compressing it. Nothing here changes the output; a parse failure just
-// means no advice.
-function hotPathsOf(source: string) {
-  try {
-    const { chunk } = parse(source);
-    resolveScopes(chunk);
-    return findHotPaths(chunk);
-  } catch {
-    return [];
-  }
 }
 
 self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
@@ -125,7 +109,6 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
               warning: result.warning,
               durationMs: performance.now() - started,
               rolledBack: result.rolledBack ?? [],
-              hotPaths: hotPathsOf(source),
               repaired,
             }
           : { id: request.id, ok: false, error: compilerError("output", outputValidation.error) };

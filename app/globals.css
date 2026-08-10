@@ -463,37 +463,3 @@ button.copied {
 }
 
 .behaviour-inconclusive strong { color: #d2d9e6; }
-
-.hotPaths {
-  border: 1px solid #2c4356;
-  border-radius: 9px;
-  padding: 11px 14px;
-  background: #0e141a;
-  color: #a8c6dd;
-  font-size: 12px;
-  line-height: 1.55;
-  animation: fadeSlideIn 220ms ease;
-}
-
-.hotPaths strong { color: #cfe6f7; }
-
-.hotPaths ul {
-  margin: 8px 0 0;
-  padding-left: 18px;
-  display: grid;
-  gap: 6px;
-}
-
-.hotPaths p {
-  margin: 9px 0 0;
-  color: #7f95a8;
-}
-
-.hotLine {
-  display: inline-block;
-  padding: 0 5px;
-  border-radius: 4px;
-  background: #16232e;
-  color: #8fb8d6;
-  font-variant-numeric: tabular-nums;
-}
