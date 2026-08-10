@@ -299,12 +299,12 @@ export class Printer {
   }
 
   private printCallArgs(args: Expr[]) {
+    // `f"s"` and `f{...}` need no brackets. An interpolated string is not
+    // in that list: Luau's grammar takes a quoted or long string there, and
+    // `f`s`` is a syntax error its compiler rejects. Ours parses it, which
+    // is why the self-check never caught this on the way back in.
     const only = args.length === 1 ? args[0] : undefined;
-    if (only && (
-      only.type === "StringExpr" ||
-      only.type === "InterpolatedStringExpr" ||
-      only.type === "TableExpr"
-    )) {
+    if (only && (only.type === "StringExpr" || only.type === "TableExpr")) {
       this.printExpr(only, 0);
       return;
     }

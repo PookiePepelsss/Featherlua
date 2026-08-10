@@ -99,3 +99,38 @@ describe("official Luau compiler and differential execution", () => {
     });
   }
 });
+
+// Found by fuzzing. `f"s"` and `f{...}` need no brackets, so the printer
+// dropped them around a lone interpolated string too. Luau's grammar does
+// not allow that and its compiler rejects `f`s``, but ours parsed it, so
+// the self-check waved the output through and only the real compiler
+// noticed. The parser now refuses it as well, which is what keeps the
+// self-check able to catch this in future.
+describe("an interpolated string as the only call argument", () => {
+  const CASES = [
+    "print(`hello`)",
+    "local n = 4 print(`value {n}`)",
+    "local o = { m = function(_, s) return s end } print(o:m(`hi`))",
+    "local t = {} t[1] = tostring(`a {1 + 1} b`) print(t[1])",
+    "for i = 1, 2 do print(`row {i}`) end",
+  ];
+
+  for (const source of CASES) {
+    it(source, () => {
+      const result = compressAggressive(source);
+      expect(result.ok, result.ok ? "" : result.error.message).toBe(true);
+      if (!result.ok) return;
+
+      const compiled = compileWithOfficialLuau(module, result.output);
+      expect(compiled.success, `output rejected by the real compiler: ${compiled.error}`).toBe(true);
+      // The opening backtick must still sit behind a bracket. The bug
+      // printed `tostring`txt`` with the bracket gone.
+      expect(result.output, "brackets were dropped around a backtick string").toMatch(/\(`/);
+
+      const before = executeWithOfficialLuau(module, source);
+      const after = executeWithOfficialLuau(module, result.output);
+      expect(after.success).toBe(true);
+      expect(after.output).toBe(before.output);
+    });
+  }
+});

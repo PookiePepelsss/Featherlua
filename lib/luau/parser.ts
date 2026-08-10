@@ -600,7 +600,10 @@ class Parser {
       this.advance();
       return [{ type: "StringExpr", raw: tok.text }];
     }
-    if (tok.kind === "InterpStringSegment") return [this.parseInterpolatedString()];
+    // No `f`s`` case: Luau's grammar allows a bare string argument only for
+    // a quoted or long string, and its compiler rejects the backtick form.
+    // Accepting it here would let the printer emit it and the self-check
+    // wave it through, which is exactly what once happened.
     this.fail("Expected call arguments");
   }
 

@@ -199,10 +199,12 @@ describe("parser: grammar wrinkles", () => {
     expect(() => parse("local x = ")).toThrowError(/line \d+, col \d+/);
   });
 
-  it("call-sugar `f\\`text\\`` only triggers on a fresh interpolated string, not a continuation segment", () => {
-    const { chunk } = parse("local r = f`hi {x}`");
-    const stat = chunk.body[0] as LocalStat;
-    expect(stat.init[0].type).toBe("CallExpr");
+  it("rejects `f\\`text\\``, which Luau's own compiler rejects too", () => {
+    // A bare string argument may be quoted or long, never interpolated.
+    // Parsing it was what let the printer emit it and the self-check pass
+    // output the real compiler then refused.
+    expect(() => parse("local r = f`hi {x}`")).toThrow();
+    expect(() => parse("local r = f(`hi {x}`)")).not.toThrow();
   });
 
   it("a bare simpleexp immediately followed by a label is a genuine grammar ambiguity (`::` greedily continues as a type assertion, per asexp ::= simpleexp ['::' Type]); a semicolon disambiguates", () => {

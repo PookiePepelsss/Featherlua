@@ -71,9 +71,16 @@ describe("printer: shortest call argument syntax", () => {
     expect(roundtrip("local a = build({ value = 1 })")).toBe("local a=build{value=1}");
   });
 
-  it("uses the same shorthand for method calls and interpolated strings", () => {
+  it("uses the shorthand for a method call too", () => {
     expect(roundtrip('remote:FireServer("payload")')).toBe('remote:FireServer"payload"');
-    expect(roundtrip("local a = show(`value {x}`)")).toBe("local a=show`value {x}`");
+  });
+
+  it("keeps the brackets around an interpolated string", () => {
+    // Luau takes a bare string argument only when it is quoted or long.
+    // `show`value`` is a syntax error its compiler rejects, so dropping
+    // these brackets produced output that would not compile.
+    expect(roundtrip("local a = show(`value {x}`)")).toBe("local a=show(`value {x}`)");
+    expect(roundtrip("local a = o:m(`hi`)")).toBe("local a=o:m(`hi`)");
   });
 
   it("keeps parentheses for zero or multiple arguments", () => {
