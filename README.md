@@ -27,17 +27,95 @@ Every input and output goes through the official Luau WebAssembly compiler befor
 
 Luau only. Lua 5.1 to 5.4 and LuaJIT are out of scope. Shebangs, `--!` directives and licence headers survive every mode.
 
-## Numbers
+## Before and after
 
-158 scripts from [Stefanuk12/ROBLOX](https://github.com/Stefanuk12/ROBLOX), 152 of which compile:
+A short executor script, with types, a branch that cannot run, a local nothing reads, and a couple of constants:
 
-- Safe: 1,649,716 to 1,117,355 bytes
-- Aggressive: 1,649,716 to 889,641 bytes, median 55% per file
-- Aggressive beat Safe on all 152, never larger than the source
+```lua
+--!strict
+-- Simple walkspeed + ESP toggle for a Roblox executor.
 
-55 of them run under a harness stubbing the executor globals, and all 55 print the same thing before and after.
+type Config = {
+	walkSpeed: number,
+	espEnabled: boolean,
+}
 
-Against darklua 0.19, Aggressive output is 3 to 5% smaller depending on the corpus.
+local Players = game:GetService("Players")
+local UserInput = game:GetService("UserInputService")
+
+local DEFAULT_SPEED = 16
+local BOOST_MULTIPLIER = 4
+local UNUSED_LEGACY_FLAG = false
+
+local config: Config = {
+	walkSpeed = DEFAULT_SPEED * BOOST_MULTIPLIER,
+	espEnabled = true,
+}
+
+local function getHumanoid()
+	local character = Players.LocalPlayer.Character
+	if character == nil then
+		return nil
+	end
+	return character:FindFirstChildOfClass("Humanoid")
+end
+
+local function applySpeed()
+	local humanoid = getHumanoid()
+	if humanoid then
+		humanoid.WalkSpeed = config.walkSpeed
+	end
+end
+
+if true then
+	applySpeed()
+end
+
+UserInput.InputBegan:Connect(function(input, processed)
+	if processed then
+		return
+	end
+	if input.KeyCode == Enum.KeyCode.F then
+		config.espEnabled = not config.espEnabled
+		print("ESP toggled", config.espEnabled)
+	end
+end)
+```
+
+Aggressive turns that into this, 479 bytes from 972:
+
+```lua
+--!strict
+local b=game:GetService"Players"local c=game:GetService"UserInputService"local a={walkSpeed=64,espEnabled=true}local function d()local a=b.LocalPlayer.Character if a==nil then return nil end return a:FindFirstChildOfClass"Humanoid"end local function e()local b=d()if b then b.WalkSpeed=a.walkSpeed end end e()c.InputBegan:Connect(function(b,c)if c then return end if b.KeyCode==Enum.KeyCode.F then a.espEnabled=not a.espEnabled print("ESP toggled",a.espEnabled)end end)
+```
+
+The type alias and the annotation are gone, `16 * 4` became 64, `UNUSED_LEGACY_FLAG` went with nothing reading it, `if true then` lost its test, `("Players")` lost its brackets, and every local is down to a single letter. The `--!strict` directive stays, because directives always do.
+
+| | Bytes | Off |
+| --- | --- | --- |
+| Source | 972 | |
+| Safe | 827 | 14.9% |
+| Medium | 729 | 25.0% |
+| darklua 0.19 | 623 | 35.9% |
+| **Aggressive** | **479** | **50.7%** |
+
+## Against darklua
+
+Same 96 scripts from [Stefanuk12/ROBLOX](https://github.com/Stefanuk12/ROBLOX) through both tools. darklua 0.19 running `darklua process` on its own defaults, which came out ahead of a hand-picked rule list, so this is its better showing rather than its worse one. Every output here was put through the official Luau compiler.
+
+| | Bytes | Off the source |
+| --- | --- | --- |
+| Source | 1,291,360 | |
+| Safe | 906,130 | 29.8% |
+| Medium | 881,546 | 31.7% |
+| darklua 0.19 | 807,277 | 37.5% |
+| **Aggressive** | **734,909** | **43.1%** |
+
+Featherlua is **8.96% smaller overall**, a median of **6.13%** per file, and smaller on 95 of the 96 with the remaining one a tie. It is not larger anywhere.
+
+Most of the gap is type stripping and constant propagation. darklua leaves `type Config = { ... }` in the output, and Luau erases it at runtime anyway.
+
+Of those 96, the 34 that will run under the stubbed-executor harness print exactly the same thing before and after, in all three modes.
 
 ## Global aliasing
 
