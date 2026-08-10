@@ -47,7 +47,13 @@ It is off by default because the alias keeps whatever the global held at load ti
 
 ## Speed
 
-Every pass trades bytes, not time, and none of them makes a script measurably faster. `npm test` includes the rewrites that were considered for a speed pass, measured against the real runtime:
+Compression is neutral for speed. Across executor-shaped scripts with real work in them, every mode lands between 0.97x and 1.05x of the original, which is noise, and a test holds it there so a future pass cannot quietly cost a hot loop time in exchange for a few bytes.
+
+It does not buy much at load either: 43% fewer bytes compiles 1.08x faster. The compiler is not the bottleneck people assume.
+
+Source-level constant folding is a size optimisation only. Luau folds constants into bytecode regardless, so `60 * 60 * 24` written out costs nothing at runtime; it only costs bytes.
+
+These are the rewrites considered for a speed pass, measured against the real runtime:
 
 | Rewrite | Effect |
 | --- | --- |
