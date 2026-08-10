@@ -280,23 +280,26 @@ class Parser {
   }
 
   private parseWhileStat(): Stat {
+    const line = this.current().line;
     this.advance();
     const cond = this.parseExpr();
     this.expectKeyword("do");
     const body = this.parseBlock();
     this.expectKeyword("end");
-    return { type: "WhileStat", cond, body };
+    return { type: "WhileStat", cond, body, line };
   }
 
   private parseRepeatStat(): Stat {
+    const line = this.current().line;
     this.advance();
     const body = this.parseBlock();
     this.expectKeyword("until");
     const cond = this.parseExpr();
-    return { type: "RepeatStat", body, cond };
+    return { type: "RepeatStat", body, cond, line };
   }
 
   private parseForStat(): Stat {
+    const line = this.current().line;
     this.advance();
     const firstName = this.expectNameText();
     if (this.atSymbol("=")) {
@@ -312,7 +315,7 @@ class Parser {
       this.expectKeyword("do");
       const body = this.parseBlock();
       this.expectKeyword("end");
-      return { type: "NumericForStat", varName: firstName, start, stop, step, body };
+      return { type: "NumericForStat", varName: firstName, start, stop, step, body, line };
     }
     const names = [firstName];
     while (this.atSymbol(",")) {
@@ -324,7 +327,7 @@ class Parser {
     this.expectKeyword("do");
     const body = this.parseBlock();
     this.expectKeyword("end");
-    return { type: "GenericForStat", names, exprs, body };
+    return { type: "GenericForStat", names, exprs, body, line };
   }
 
   private parseFunctionDeclStat(): Stat {

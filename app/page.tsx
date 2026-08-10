@@ -8,6 +8,7 @@ import {
 } from "@/lib/luau/compress-aggressive";
 import type { CompressionMode, CompressionRequest, CompressionResponse } from "@/lib/luau/compression-protocol";
 import type { BehaviourRequest, BehaviourResponse } from "@/lib/luau/behaviour-protocol";
+import type { HotPath } from "@/lib/luau/hot-paths";
 
 interface Stats {
   inputChars: number;
@@ -55,6 +56,7 @@ export default function Home() {
   const [repair, setRepair] = useState<{ description: string; line: number; fixed: string; applied: boolean } | null>(null);
   const [options, setOptions] = useState<AggressiveOptions>(DEFAULT_AGGRESSIVE_OPTIONS);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [hotPaths, setHotPaths] = useState<HotPath[]>([]);
   const [behaviour, setBehaviour] = useState<{ state: "running" | "same" | "differs" | "inconclusive"; detail: string } | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const behaviourWorker = useRef<Worker | null>(null);
@@ -136,6 +138,7 @@ export default function Home() {
     setWarning(null);
     setRepair(null);
     setStats(null);
+    setHotPaths([]);
     setCopied(false);
   }
 
@@ -172,6 +175,7 @@ export default function Home() {
       }
       const result = event.data;
       setOutput(result.output);
+      setHotPaths(result.hotPaths);
       const rollback = result.rolledBack.length
         ? `Skipped because they did not reduce size: ${result.rolledBack.join(", ")}.`
         : null;
@@ -292,6 +296,25 @@ export default function Home() {
       )}
 
       {warning && <div className="warning" role="status">{warning}</div>}
+
+      {hotPaths.length > 0 && (
+        <div className="hotPaths" role="status">
+          <strong>
+            {hotPaths.length === 1 ? "One place" : `${hotPaths.length} places`} your script itself could be quicker
+          </strong>
+          <ul>
+            {hotPaths.map((hit) => (
+              <li key={`${hit.line}:${hit.kind}`}>
+                <span className="hotLine">line {hit.line}</span> {hit.message}
+              </li>
+            ))}
+          </ul>
+          <p>
+            Nothing here has been changed. These are rewrites only you can judge, because whether a value
+            really is the same every time round is something the script knows and a compressor does not.
+          </p>
+        </div>
+      )}
 
       {behaviour && behaviour.state !== "running" && (
         <div className={`behaviour behaviour-${behaviour.state}`} role="status">

@@ -1,4 +1,5 @@
 import type { AggressiveOptions } from "./compress-aggressive";
+import type { HotPath } from "./hot-paths";
 
 export type CompressionMode = "safe" | "medium" | "aggressive";
 
@@ -19,6 +20,8 @@ export type CompressionResponse =
       warning?: string;
       durationMs: number;
       rolledBack: string[];
+      /** Places the script itself could be quicker. Advice, never applied. */
+      hotPaths: HotPath[];
       /** Set when Auto Repair changed the script before compressing it. */
       repaired?: { description: string; line: number; source: string };
     }

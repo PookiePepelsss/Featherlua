@@ -23,6 +23,8 @@ Then open `http://localhost:3000`, paste a script, and press Compress.
 
 **Check behaviour** runs your script and the compressed one side by side under a stubbed executor, about ninety Roblox and executor globals recording every call they receive, and compares what the two printed. A stub is not your executor, so a match is evidence rather than proof, but a mismatch is real. Scripts that wait on something they cannot have here are given ten seconds and then reported as inconclusive.
 
+**Hot paths** points at places the script itself could be quicker: a string built up with `..` inside a loop, a field chain read twice where nothing writes it, a `#` recounted in a loop condition. It reports the line and changes nothing, because whether a value really is the same every time round is something you know and a compressor does not.
+
 Every input and output goes through the official Luau WebAssembly compiler before you see a result.
 
 Luau only. Lua 5.1 to 5.4 and LuaJIT are out of scope. Shebangs, `--!` directives and licence headers survive every mode.
