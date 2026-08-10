@@ -3,12 +3,13 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
 
-// Backs the README's Speed table with measurement rather than folk wisdom.
-// Timing comes from os.clock inside Luau, so compiling and crossing the
-// wasm boundary are not counted. Only direction is asserted, with a wide
-// margin, so a busy machine cannot fail it; the multiples live in the
-// README. This is the plain interpreter, not Roblox, so the direction
-// transfers and the exact numbers do not.
+// Which rewrites would actually speed a script up, settled by measurement
+// rather than folk wisdom, since several pieces of standard Lua advice turn
+// out to be slower here. Timing comes from os.clock inside Luau, so
+// compiling and crossing the wasm boundary are not counted. Only direction
+// is asserted, with a wide margin, so a busy machine cannot fail it. This
+// is the plain interpreter, not Roblox: the direction transfers, the exact
+// numbers do not.
 
 let module: LuauModule;
 

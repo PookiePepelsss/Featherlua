@@ -119,39 +119,9 @@ Of those 96, the 34 that will run under the stubbed-executor harness print exact
 
 ## Global aliasing
 
-`local p = print` is worth about 3% on large scripts. It is worth nothing at all for speed, which is worth stating because localising globals is standard Lua advice: measured, it came out at 1.04x, and Luau's import resolution has already done the work.
+`local p = print` is worth about 3% on large scripts. It buys nothing for speed, despite localising globals being standard Lua advice, because Luau resolves imports ahead of time and there is no lookup left to save.
 
 It is off by default because the alias keeps whatever the global held at load time. Anything that hooks or replaces that global later would be missed, which is normal in executor environments. The pass refuses outright on scripts touching `getfenv`, `getgenv`, `hookfunction`, `loadstring`, `_G`, `shared` or the debug reflection APIs.
-
-## Speed
-
-Compression is neutral for speed. Across executor-shaped scripts with real work in them, every mode lands between 0.97x and 1.05x of the original, which is noise, and a test holds it there so a future pass cannot quietly cost a hot loop time in exchange for a few bytes.
-
-It does not buy much at load either: 43% fewer bytes compiles 1.08x faster. The compiler is not the bottleneck people assume.
-
-Source-level constant folding is a size optimisation only. Luau folds constants into bytecode regardless, so `60 * 60 * 24` written out costs nothing at runtime; it only costs bytes.
-
-These are the rewrites considered for a speed pass, measured against the real runtime:
-
-| Rewrite | Effect |
-| --- | --- |
-| Building a string in a loop, into `table.concat` | 106x faster |
-| Hoisting a nested field chain out of a loop | 3.5x |
-| Hoisting a repeated field read out of a loop | 1.9x |
-| Hoisting `#t` out of a loop condition | 1.4x |
-| Hoisting a method lookup out of a loop | 1.4x |
-| Localising a library global | 1.04x, nothing |
-| `table.insert(t, v)` into `t[#t + 1] = v` | 1.04x, nothing |
-| `ipairs` into a numeric `for` | **0.88x, slower** |
-| A dot call into a method call | **0.85x, slower** |
-
-The bottom four are standard Lua 5.1 advice and do not survive contact with Luau, which has a dedicated instruction for `ipairs`, resolves imports ahead of time, and gains nothing from `NAMECALL` here.
-
-None of the rest are implemented, and the reason is that the list is really one item: every genuine win is hoisting something out of a loop, and that is exactly the rewrite that cannot be trusted. `part.Position` read twice in a loop is not a repeated read to be folded away, it is the whole point of the loop. A pass doing this would also produce a program deliberately not equivalent to its input, so it could not be checked the way the existing passes are.
-
-These numbers move if measured carelessly. Warming the runtime first and measuring each side in both orders matters: without that, localising a global reads as 1.5x purely because it was the first thing run.
-
-Measured against the standalone Luau interpreter built to WebAssembly. Roblox has native codegen and its own fast paths, so the direction transfers and the exact multiples do not.
 
 ## Tests
 
