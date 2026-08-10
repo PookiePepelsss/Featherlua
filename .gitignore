@@ -42,3 +42,7 @@ next-env.d.ts
 /outputs/
 /work/
 .sites-dev.*.log
+
+# local tooling, not part of the project
+.claude/
+.openai/
