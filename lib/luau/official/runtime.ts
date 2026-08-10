@@ -41,19 +41,32 @@ export async function createOfficialLuau(wasmBinary: Uint8Array): Promise<LuauMo
   }) as Promise<LuauModule>;
 }
 
+/**
+ * Blanks a leading `#!` line, keeping the newline so every later line
+ * still reports its own number. Luau's compiler has no notion of a
+ * shebang and reports a parse error on one, but a script carrying it is
+ * perfectly good Luau underneath, and this compressor keeps the line in
+ * its output. Compiling and running are the only places it has to go.
+ */
+export function withoutShebang(source: string): string {
+  if (!source.startsWith("#!")) return source;
+  const newline = source.indexOf("\n");
+  return newline === -1 ? "" : source.slice(newline);
+}
+
 export function compileWithOfficialLuau(module: LuauModule, source: string): CompileResult {
   const result = module.ccall(
     "luau_dump_bytecode",
     "string",
     ["string", "number", "number", "number", "number"],
-    [source, 1, 1, 99, 0],
+    [withoutShebang(source), 1, 1, 99, 0],
   );
   if (!result) return { success: false, error: "The compiler returned no result." };
   return JSON.parse(result) as CompileResult;
 }
 
 export function executeWithOfficialLuau(module: LuauModule, source: string): ExecuteResult {
-  const result = module.ccall("luau_execute", "string", ["string"], [source]);
+  const result = module.ccall("luau_execute", "string", ["string"], [withoutShebang(source)]);
   if (!result) return { success: false, output: "", error: "The runtime returned no result." };
   return JSON.parse(result) as ExecuteResult;
 }

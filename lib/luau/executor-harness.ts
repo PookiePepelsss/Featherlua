@@ -208,7 +208,11 @@ function preludeText() {
 }
 
 export function withExecutorHarness(source: string): string {
-  return `${preludeText()}\ndo\n${source}\nend\n__dumplog()`;
+  // A `#!` line is only a line at the very top of a file. Wrapped below the
+  // prelude it is halfway down one, where it is a syntax error rather than
+  // a shebang, so it goes before the source is embedded.
+  const body = source.startsWith("#!") ? source.slice(source.indexOf("\n") + 1) : source;
+  return `${preludeText()}\ndo\n${body}\nend\n__dumplog()`;
 }
 
 /**
