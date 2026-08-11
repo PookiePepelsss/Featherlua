@@ -50,17 +50,47 @@ local function __stub(name, result)
 end
 
 local __proxyMeta = {}
+-- Children are remembered rather than rebuilt. Roblox hands back the same
+-- object for the same path, and scripts rely on it: Enum.KeyCode.W is
+-- used as a table key, and a fresh table each time would never match the
+-- one it was stored under.
 __proxyMeta.__index = function(self, key)
-  __rec("index", rawget(self, "__name") .. "." .. tostring(key))
-  local child = setmetatable({ __name = rawget(self, "__name") .. "." .. tostring(key) }, __proxyMeta)
+  local name = rawget(self, "__name") .. "." .. tostring(key)
+  __rec("index", name)
+  local kids = rawget(self, "__kids")
+  if kids == nil then
+    kids = {}
+    rawset(self, "__kids", kids)
+  end
+  local child = kids[tostring(key)]
+  if child == nil then
+    child = setmetatable({ __name = name }, __proxyMeta)
+    kids[tostring(key)] = child
+  end
   return child
 end
 __proxyMeta.__newindex = function(self, key, value)
   __rec("newindex", rawget(self, "__name") .. "." .. tostring(key), value)
 end
+-- Calls are remembered by name and arguments for the same reason, so that
+-- game:GetService("Players") is the same object every time it is asked
+-- for, as it would be in Roblox.
 __proxyMeta.__call = function(self, ...)
-  __rec("call", rawget(self, "__name"), ...)
-  return setmetatable({ __name = rawget(self, "__name") .. "()" }, __proxyMeta)
+  local name = rawget(self, "__name")
+  __rec("call", name, ...)
+  local key = name
+  for i = 1, select("#", ...) do key = key .. "\\1" .. __fmt((select(i, ...)), 2) end
+  local calls = rawget(self, "__calls")
+  if calls == nil then
+    calls = {}
+    rawset(self, "__calls", calls)
+  end
+  local result = calls[key]
+  if result == nil then
+    result = setmetatable({ __name = name .. "()" }, __proxyMeta)
+    calls[key] = result
+  end
+  return result
 end
 __proxyMeta.__tostring = function(self) return rawget(self, "__name") end
 __proxyMeta.__eq = function(a, b) return rawget(a, "__name") == rawget(b, "__name") end
@@ -168,14 +198,64 @@ task = {
   spawn = function(fn, ...) __rec("task.spawn") if type(fn) == "function" then fn(...) end return __proxy("thread") end,
   defer = function(fn, ...) __rec("task.defer") if type(fn) == "function" then fn(...) end return __proxy("thread") end,
   delay = function(t, fn, ...) __rec("task.delay", t) if type(fn) == "function" then fn(...) end return __proxy("thread") end,
-  wait = function(t) __rec("task.wait", t) return t or 0 end,
+  wait = function(t) return wait(t) end,
   cancel = function(...) __rec("task.cancel") end,
 }
 
 syn = { request = function(o) __rec("syn.request", o) return { StatusCode = 200, Body = "{}" } end, protect_gui = __stub("syn.protect_gui") }
 request = function(o) __rec("request", o) return { StatusCode = 200, Body = "{}" } end
 http_request = request
-loadstring = function(src) __rec("loadstring", src) return function() return function(a, b) return a + b end end end
+-- loadstring used to hand back a function that added its arguments,
+-- which blew up the moment a script did Signal.new(...) on the result.
+-- A proxy answers to anything, which is what a fetched library looks like.
+loadstring = function(src) __rec("loadstring", src) return function() return __proxy("loadstring()") end end
+require = function(target) __rec("require", target) return __proxy("require()") end
+
+-- Roblox globals a script may use without ever touching an executor API.
+-- Their absence, not the compression, was what stopped most of a real
+-- corpus from running here.
+warn = function(...) __rec("warn", ...) end
+typeof = function(v) return type(v) end
+unpack = table.unpack
+
+-- Time never really passes, and it must not look as though it does: two
+-- runs have to agree exactly, so these count rather than measure.
+local __ticks = 0
+local __waits = 0
+-- A script written as while true do wait() end never finishes. Roblox
+-- would keep it alive forever; here it has to stop, or the check that runs
+-- it stops instead.
+local __WAIT_BUDGET = 2000
+wait = function(t)
+  __waits = __waits + 1
+  if __waits > __WAIT_BUDGET then error("harness: this script waits forever", 0) end
+  __ticks = __ticks + (t or 0.03)
+  __rec("wait", t)
+  return t or 0.03
+end
+spawn = function(fn, ...) __rec("spawn") if type(fn) == "function" then fn(...) end end
+delay = function(t, fn, ...) __rec("delay", t) if type(fn) == "function" then fn(...) end end
+tick = function() __ticks = __ticks + 0.01 return 1700000000 + __ticks end
+time = function() return __ticks end
+elapsedTime = time
+Random = { new = function() return __proxy("Random") end }
+Enum = __proxy("Enum")
+ColorSequence = { new = function(...) return { __seq = "ColorSequence" } end }
+ColorSequenceKeypoint = { new = function(t, c) return { t = t, c = c } end }
+NumberSequence = { new = function(...) return { __seq = "NumberSequence" } end }
+NumberSequenceKeypoint = { new = function(t, v) return { t = t, v = v } end }
+NumberRange = { new = function(a, b) return { Min = a, Max = b or a } end }
+TweenInfo = { new = function(...) return { __tween = true } end }
+BrickColor = { new = function(v) return { Name = tostring(v) } end, Random = function() return { Name = "Grey" } end }
+Rect = { new = function(a, b) return { Min = a, Max = b } end }
+Ray = { new = function(o, d) return { Origin = o, Direction = d } end }
+Region3 = { new = function(a, b) return { Min = a, Max = b } end }
+Axes = { new = function() return {} end }
+Faces = { new = function() return {} end }
+PhysicalProperties = { new = function(...) return {} end }
+UDim = { new = function(a, b) return { Scale = a, Offset = b } end }
+settings = function() return __proxy("settings") end
+UserSettings = function() return __proxy("UserSettings") end
 `;
 
 // The sandbox's `_G` is readonly and is not the real global environment, so
