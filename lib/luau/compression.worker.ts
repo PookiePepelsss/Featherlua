@@ -5,6 +5,7 @@ import type { CompressionRequest, CompressionResponse } from "./compression-prot
 import { compressSafe, verifySafeCompression } from "./compress-safe";
 import { suggestRepairs } from "./repair";
 import { runSelfTest, SELF_TEST_COMMAND } from "./self-test";
+import { isRuntimeCollapse, loadOnce } from "./official/module-cache";
 import {
   compileWithOfficialLuau,
   createOfficialLuau,
@@ -12,21 +13,28 @@ import {
   type LuauModule,
 } from "./official/runtime";
 
-let modulePromise: Promise<LuauModule> | undefined;
+// Remembered once loaded, forgotten if it fails, so pressing Compress
+// again after a network blip actually tries again.
+const officialModule = loadOnce(async (): Promise<LuauModule> => {
+  const response = await fetch("/wasm/luau.wasm");
+  if (!response.ok) {
+    throw new Error(`Unable to load the official Luau compiler (${response.status}). Check your connection and press Compress again.`);
+  }
+  const wasm = new Uint8Array(await response.arrayBuffer());
+  await verifyOfficialLuauWasm(wasm);
+  return createOfficialLuau(wasm);
+});
 
-function getOfficialModule() {
-  modulePromise ??= fetch("/wasm/luau.wasm")
-    .then((response) => {
-      if (!response.ok) throw new Error(`Unable to load official Luau compiler (${response.status}).`);
-      return response.arrayBuffer();
-    })
-    .then(async (buffer) => {
-      const wasm = new Uint8Array(buffer);
-      await verifyOfficialLuauWasm(wasm);
-      return createOfficialLuau(wasm);
-    });
-  return modulePromise;
-}
+const getOfficialModule = () => officialModule.get();
+
+// The compiler runs in a fixed amount of WebAssembly memory. A large
+// enough script exhausts it, and Emscripten answers by aborting the whole
+// instance, which then fails every call after it. Saying "memory access
+// out of bounds" tells nobody anything, and keeping the dead instance
+// meant one oversized script broke the tab until it was reloaded.
+const RAN_OUT_OF_MEMORY =
+  "The official Luau compiler ran out of memory on this script. It runs inside the page with a fixed amount of memory, " +
+  "so a very large script can exhaust it. The compiler has been reloaded, so smaller scripts will work again.";
 
 function compilerError(kind: "input" | "output", detail?: string) {
   return `Official Luau compiler rejected the ${kind}: ${detail ?? "unknown compiler error"}`;
@@ -132,7 +140,13 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
       }
     }
   } catch (error) {
-    response = { id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) };
+    if (isRuntimeCollapse(error)) {
+      // The instance is past saving; drop it so the next press gets a new one.
+      officialModule.forget();
+      response = { id: request.id, ok: false, error: RAN_OUT_OF_MEMORY };
+    } else {
+      response = { id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
   // Auto Repair saying nothing at all reads as it being broken rather than
   // as it having looked and declined, so the outcome is reported wherever
