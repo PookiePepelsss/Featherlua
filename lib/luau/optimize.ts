@@ -209,6 +209,21 @@ function singleReturnedValue(body: Stat[]): Expr | undefined {
   return multiValued ? undefined : value;
 }
 
+function isBooleanExpr(expr: Expr): boolean {
+  if (expr.type === "TrueExpr" || expr.type === "FalseExpr") return true;
+  if (expr.type === "UnaryExpr" && expr.operator === "not") return true;
+  return expr.type === "BinaryExpr" && ["==", "~=", "<", "<=", ">", ">="].includes(expr.operator);
+}
+
+function booleanCoercion(expr: Expr): Expr {
+  if (isBooleanExpr(expr)) return expr;
+  return {
+    type: "UnaryExpr",
+    operator: "not",
+    operand: { type: "UnaryExpr", operator: "not", operand: expr },
+  };
+}
+
 function ifStatToReturn(stat: Stat): Stat | undefined {
   // Without an else arm, falling through returns nothing at all, which is
   // not the same as returning the nil an if-expression would produce.
@@ -225,6 +240,16 @@ function ifStatToReturn(stat: Stat): Stat | undefined {
   if (!arms.length) return undefined;
 
   const [first, ...rest] = arms;
+  if (rest.length === 0) {
+    const thenTrue = first.expr.type === "TrueExpr";
+    const thenFalse = first.expr.type === "FalseExpr";
+    const elseTrue = elseExpr.type === "TrueExpr";
+    const elseFalse = elseExpr.type === "FalseExpr";
+    if (thenTrue && elseFalse) return { type: "ReturnStat", args: [booleanCoercion(first.cond)] };
+    if (thenFalse && elseTrue) {
+      return { type: "ReturnStat", args: [{ type: "UnaryExpr", operator: "not", operand: first.cond }] };
+    }
+  }
   return {
     type: "ReturnStat",
     args: [{
@@ -283,6 +308,22 @@ function literalTruthiness(expr: Expr): boolean | undefined {
   return undefined;
 }
 
+function asSingleValue(expr: Expr): Expr {
+  if (expr.type !== "CallExpr" && expr.type !== "MethodCallExpr" && expr.type !== "VarargExpr") return expr;
+  return { type: "ParenExpr", expr };
+}
+
+function plainAsciiString(expr: Expr): string | undefined {
+  if (expr.type !== "StringExpr") return undefined;
+  const quote = expr.raw[0];
+  if ((quote !== '"' && quote !== "'") || expr.raw.at(-1) !== quote) return undefined;
+  const body = expr.raw.slice(1, -1);
+  for (const char of body) {
+    if (char === "\\" || char === "\r" || char === "\n" || char.charCodeAt(0) > 0x7f) return undefined;
+  }
+  return body;
+}
+
 function foldEquality(left: Expr, right: Expr, isEq: boolean): Expr | undefined {
   const lk = literalKind(left);
   const rk = literalKind(right);
@@ -300,6 +341,11 @@ function foldEquality(left: Expr, right: Expr, isEq: boolean): Expr | undefined 
     return boolNode(isEq ? a === b : a !== b);
   }
   if (lk === "nil") return boolNode(isEq);
+  if (lk === "string") {
+    const a = plainAsciiString(left);
+    const b = plainAsciiString(right);
+    if (a !== undefined && b !== undefined) return boolNode(isEq ? a === b : a !== b);
+  }
   return undefined;
 }
 
@@ -314,8 +360,8 @@ function foldNumericComparison(left: Expr, right: Expr, op: string): Expr | unde
 function foldLogical(left: Expr, right: Expr, op: "and" | "or"): Expr | undefined {
   const truthy = literalTruthiness(left);
   if (truthy === undefined) return undefined;
-  if (op === "and") return truthy ? right : left;
-  return truthy ? left : right;
+  if (op === "and") return truthy ? asSingleValue(right) : left;
+  return truthy ? left : asSingleValue(right);
 }
 
 // Decimal escapes and \z can absorb text across a token boundary.
@@ -494,6 +540,9 @@ function foldExpr(expr: Expr): Expr {
       } else if (expr.operator === "not") {
         const truthy = literalTruthiness(expr.operand);
         if (truthy !== undefined) return boolNode(!truthy);
+      } else if (expr.operator === "#") {
+        const value = plainAsciiString(expr.operand);
+        if (value !== undefined) return { type: "NumberExpr", raw: String(value.length) };
       }
       return expr;
     }
@@ -543,6 +592,11 @@ function foldExpr(expr: Expr): Expr {
         clause.expr = foldExpr(clause.expr);
       }
       expr.elseExpr = foldExpr(expr.elseExpr);
+      if (expr.elseifs.length === 0) {
+        const truthy = literalTruthiness(expr.cond);
+        const selected = truthy === true ? expr.thenExpr : truthy === false ? expr.elseExpr : undefined;
+        if (selected) return asSingleValue(selected);
+      }
       return expr;
     case "ParenExpr":
       expr.expr = foldExpr(expr.expr);
@@ -706,7 +760,7 @@ function optimizeStat(stat: Stat): Stat | undefined {
       // drop entirely, unlike a mid-loop `break`/`if false` elimination
       // (see optimize.ts's other passes) which must preserve scope via a
       // do-wrapper; here nothing survives at all.
-      if (stat.cond.type === "FalseExpr" && !containsLabel(stat.body)) return undefined;
+      if (literalTruthiness(stat.cond) === false && !containsLabel(stat.body)) return undefined;
       return stat;
     }
     case "RepeatStat":
@@ -729,9 +783,10 @@ function optimizeStat(stat: Stat): Stat | undefined {
       const trimmed: typeof stat.clauses = [];
       let decided = false;
       for (const clause of stat.clauses) {
-        if (clause.cond.type === "FalseExpr" && !containsLabel(clause.body)) continue;
+        const truthy = literalTruthiness(clause.cond);
+        if (truthy === false && !containsLabel(clause.body)) continue;
         trimmed.push(clause);
-        if (clause.cond.type === "TrueExpr") {
+        if (truthy === true) {
           decided = true;
           break;
         }
@@ -758,10 +813,11 @@ function optimizeStat(stat: Stat): Stat | undefined {
       // `if COND then A [else B] end`.
       if (stat.clauses.length === 1) {
         const [clause] = stat.clauses;
-        if (clause.cond.type === "TrueExpr" && !containsLabel(clause.body)) {
+        const truthy = literalTruthiness(clause.cond);
+        if (truthy === true && !containsLabel(clause.body)) {
           return clause.body.length === 0 ? undefined : { type: "DoStat", body: clause.body };
         }
-        if (clause.cond.type === "FalseExpr") {
+        if (truthy === false) {
           if (stat.elseBody) {
             if (!containsLabel(stat.elseBody)) {
               return stat.elseBody.length === 0 ? undefined : { type: "DoStat", body: stat.elseBody };

@@ -48,6 +48,47 @@ describe("branches that only return become an if-expression", () => {
   });
 });
 
+describe("boolean-return branches collapse to coercion", () => {
+  it("returns the condition when it already produces a boolean", () => {
+    expect(output("local function f(a) if a == 1 then return true else return false end end return f"))
+      .toBe("local function a(a)return a==1 end return a");
+  });
+
+  it("coerces a value to boolean without evaluating it twice", () => {
+    expect(output("local function f(a) if a then return true else return false end end return f"))
+      .toBe("local function a(a)return not not a end return a");
+  });
+
+  it("uses one negation for reversed boolean arms", () => {
+    expect(output("local function f(a) if a then return false else return true end end return f"))
+      .toBe("local function a(a)return not a end return a");
+  });
+});
+
+describe("literal conditions collapse using Luau truthiness", () => {
+  it("treats nil as false", () => {
+    expect(output("if nil then print('bad') else print('ok') end")).toBe("print'ok'");
+  });
+
+  it("treats zero and an empty string as true", () => {
+    expect(output("if 0 then print('zero') end if '' then print('empty') end"))
+      .toBe("print'zero'print'empty'");
+  });
+
+  it("removes a while loop whose condition is nil", () => {
+    expect(output("while nil do print('bad') end print('ok')")).toBe("print'ok'");
+  });
+
+  it("selects a constant if-expression arm", () => {
+    expect(output("return if nil then 1 else 2")).toBe("return 2");
+  });
+
+  it("keeps a selected call single-valued", () => {
+    expect(output("local function pair() return 1, 2 end return if true then pair() else 0"))
+      .toBe("local function a()return 1,2 end return(a())");
+  });
+});
+
 describe("redundant syntax is dropped", () => {
   it("a numeric for step of 1", () => {
     expect(output("local t = {} for i = 1, 10, 1 do t[i] = i end return t"))
@@ -105,6 +146,11 @@ describe("the shorter statements run identically", () => {
     `local s = [[back${String.fromCharCode(92)}slash]] print(#s, s, string.byte(s, 1, -1))`,
     "local s = [[a]] .. [[b]] print(#s, s)",
     "local s = [==[has ]] inside]==] print(#s, s)",
+    "local function b(v) if v then return true else return false end end print(b(nil), b(0), b(''))",
+    "local function b(v) if v then return false else return true end end print(b(nil), b(0), b(''))",
+    "if nil then print('bad') else print('nil') end if 0 then print('zero') end if '' then print('empty') end",
+    "while nil do print('bad') end print(if false then 'bad' else 'ok')",
+    "local function pair() return 1, 2 end local function count(...) return select('#', ...) end print(count(true and pair()), count(false or pair()), count(if true then pair() else 0))",
   ];
 
   for (const source of SCRIPTS) {

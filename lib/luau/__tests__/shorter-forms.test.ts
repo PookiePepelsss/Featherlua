@@ -75,6 +75,20 @@ describe("negated equality collapses to the inequality operator", () => {
   });
 });
 
+describe("plain string facts fold without decoding escapes", () => {
+  it("folds the byte length of an ASCII string", () => {
+    expect(output("return #'hello'")).toBe("return 5");
+  });
+
+  it("folds equality across quote styles", () => {
+    expect(output(`return "same" == 'same', "a" ~= 'b'`)).toBe("return true,true");
+  });
+
+  it("leaves escaped and non-ASCII lengths to Luau", () => {
+    expect(output(`return #"a\\n", #"é"`)).toBe(`return#"a\\n",#"é"`);
+  });
+});
+
 describe("the shorter forms run identically", () => {
   const SCRIPTS = [
     "local a = 1 a = a + 1 a = a * 2 print(a)",
@@ -89,6 +103,8 @@ describe("the shorter forms run identically", () => {
     `local s = "a\\"b\\"c\\"d" print(#s, s, string.byte(s, 1, -1))`,
     `local s = "\\65\\66\\z   x" print(#s, s, string.byte(s, 1, -1))`,
     "local a = 1 a = a - 1 a = a // 2 a = a % 3 a = a ^ 2 print(a)",
+    `print(#"plain", #"", "same" == 'same', "a" ~= 'b')`,
+    `print(#"a\\n", #"é")`,
   ];
 
   for (const source of SCRIPTS) {

@@ -69,6 +69,23 @@ describe("trust regressions: evaluation order", () => {
   });
 });
 
+describe("trust regressions: multi-return truncation", () => {
+  const cases = [
+    "return true and pair()",
+    "return false or pair()",
+    "return if true then pair() else 0",
+    "return if nil then 0 else pair()",
+  ];
+
+  for (const statement of cases) {
+    it(`keeps one result for ${statement}`, () => {
+      const source = `local function pair() return 1, 2 end\n${statement}`;
+      const result = output(source, { foldConstants: true });
+      expect(result).toContain("return(pair())");
+    });
+  }
+});
+
 describe("trust regressions: unused initializers", () => {
   it("keeps a table constructor whose nil key throws", () => {
     expect(output("local unused={[nil]=1}\nprint(1)", { removeUnusedLocals: true })).toContain(

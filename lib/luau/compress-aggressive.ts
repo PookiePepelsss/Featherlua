@@ -52,10 +52,9 @@ export const DEFAULT_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   aliasGlobals: false,
 };
 
-// Medium leaves the locals alone: none renamed, invented or deleted, so
-// anything reading one by name still finds it. What it does change is the
-// part no runtime can see, such as types, constant arithmetic and branches
-// that cannot run.
+// Medium keeps local names and bindings, but may still change declaration
+// layout and line metadata. Reflection warnings cover scripts that inspect
+// those details.
 export const MEDIUM_AGGRESSIVE_OPTIONS: AggressiveOptions = {
   rename: false,
   foldConstants: true,
@@ -297,5 +296,4 @@ function compressAggressiveSearching(source: string, options: Partial<Aggressive
     appliedOptions: active,
   };
 }
-
 

@@ -111,8 +111,9 @@ describe("optimize: comparison folding", () => {
     expect(output("local x = 1 ~= \"1\"")).toBe("local a=true");
   });
 
-  it("does NOT fold string==string (would need escape-aware decoding to be safe)", () => {
-    const result = compressAggressive('local x = "a" == "a"');
+  it("folds plain ASCII strings and leaves encoded strings alone", () => {
+    expect(output('local x = "a" == \'a\'')).toBe("local a=true");
+    const result = compressAggressive('local x = "\\97" == "a"');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.output).toContain("==");

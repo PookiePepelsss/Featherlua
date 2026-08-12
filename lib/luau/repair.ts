@@ -256,14 +256,6 @@ function missingEndRepair(source: string): Repair | undefined {
   };
 }
 
-function missingUntilRepair(source: string): Repair | undefined {
-  const { missingUntils, missingEnds } = blockBalance(source);
-  if (missingUntils !== 1 || missingEnds !== 0) return undefined;
-  const fixed = appendCode(source, "\nuntil true");
-  if (!parses(fixed)) return undefined;
-  return { description: "closed a `repeat` with `until true`", fixed, line: countNewlines(source) + 1 };
-}
-
 function surplusEndRepair(source: string, error: ParseError): Repair | undefined {
   // When the parser names an `end` as unexpected it is saying no block was
   // open for it, and that token is the one to drop. Requiring the file to
@@ -342,7 +334,13 @@ function missingKeywordRepair(source: string, error: ParseError): Repair | undef
   // `end` is deliberately absent: the parser reports it at the point it ran
   // out of input, which is rarely where the block was meant to close.
   // missingEndRepair works that out from indentation instead.
-  const wanted = /^Expected '(then|do|until|,)'/.exec(error.message);
+  //
+  // `until` is absent for a different reason. Inserting the bare keyword
+  // would take whatever follows as the loop condition, so `repeat f() x > 5`
+  // would silently become `repeat f() until x > 5`. There is no evidence
+  // for that condition anywhere, and a loop that stops on the wrong one
+  // still compiles and still runs.
+  const wanted = /^Expected '(then|do|,)'/.exec(error.message);
   if (wanted) {
     const keyword = wanted[1];
     const separator = keyword === "," ? "" : " ";
@@ -458,7 +456,6 @@ function candidateFixes(source: string, error: ParseError): Repair[] {
     strayLocalRepair(source, error),
     surplusEndRepair(source, error),
     missingEndRepair(source),
-    missingUntilRepair(source),
     unclosedBracketRepair(source),
   ];
   const seen = new Set<string>();

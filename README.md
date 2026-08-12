@@ -15,11 +15,11 @@ Then open `http://localhost:3000`, paste a script, and press Compress.
 
 **Safe** removes comments and whitespace, then checks the output holds the same tokens as the input.
 
-**Medium** parses to an AST but leaves the locals alone: none renamed, none invented, none removed. It folds constant arithmetic, drops type annotations and branches that cannot run, merges adjacent declarations, and picks the shorter spelling of a form. Anything reading a local by name, such as `debug.getlocal` or a stack trace, sees what it saw before.
+**Medium** parses to an AST but keeps every local name and binding. It folds constant arithmetic, drops type annotations and branches that cannot run, merges adjacent declarations, and picks the shorter spelling of a form. Debug and reflection APIs can still observe changed declaration layout or line information, so the app warns when it detects them.
 
 **Aggressive** parses to an AST and renames locals, folds and propagates constants, drops what nothing reads, strips type annotations, merges declarations, dedupes strings, and rewrites various forms into shorter ones. Every pass has a checkbox. Afterwards it re-parses its own output and checks it matches what it meant to produce.
 
-**Auto Repair** fixes a script the compiler rejects, where the mistake has only one sensible reading: a missing `end`, `then`, `do`, `until` or comma, an unclosed bracket, a stray `end`. Anything ambiguous is reported rather than guessed at. Off by default, in which case the fix is offered instead.
+**Auto Repair** fixes a script the compiler rejects, where the mistake has only one sensible reading: a missing `end`, `then`, `do` or comma, an unclosed bracket, or a stray `end`. A `repeat` with no `until` condition is left unchanged because inventing a condition would change its behavior. Anything ambiguous is reported rather than guessed at. Off by default, in which case the fix is offered instead.
 
 Every input and output goes through the official Luau WebAssembly compiler before you see a result.
 

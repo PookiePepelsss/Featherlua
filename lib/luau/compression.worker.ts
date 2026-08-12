@@ -123,7 +123,7 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
   if (!response.ok && repairWasDeclined) {
     response = { ...response, error: `${response.error}
 
-Auto Repair looked at this and did not find a single unambiguous fix, so it changed nothing. It only handles an unclosed block, a missing then/do/until, an unclosed bracket, a missing comma, or one end too many.` };
+Auto Repair looked at this and did not find a single unambiguous fix, so it changed nothing. It only handles an unclosed block, a missing then/do, an unclosed bracket, a missing comma, or one end too many.` };
   }
   self.postMessage(response);
 };

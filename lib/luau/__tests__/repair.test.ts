@@ -22,7 +22,6 @@ const FIXABLE: [string, string, string][] = [
   ["two blocks left open", "local function f()\n\tif true then\n\t\tprint(1)\nend", "added a missing `end`"],
   ["a missing then", "local x = 1\nif x > 0\n\tprint(x)\nend", "added a missing `then`"],
   ["a missing do", "for i = 1, 3\n\tprint(i)\nend", "added a missing `do`"],
-  ["a repeat left open", "local i = 0\nrepeat\n\ti = i + 1", "closed a `repeat` with `until true`"],
   ["an unclosed paren", "print((1 + 2)\nprint(3)", "closed an unclosed `(`"],
   ["an unclosed brace", "local t = {a = 1, b = 2\nprint(t)", "closed an unclosed `{`"],
   ["one end too many", "local x = 1\nprint(x)\nend", "removed an `end` with no block left to close"],
@@ -76,6 +75,7 @@ const LEFT_ALONE: [string, string][] = [
   // a wall of `end`s would paper over that rather than fix it.
   ["dozens of blocks left open", `${"if a then\n".repeat(30)}print(1)`],
   ["crossed brackets", "print((1 + 2]\n"],
+  ["a repeat with no condition", "local i = 0\nrepeat\n\ti = i + 1"],
 ];
 
 describe("anything ambiguous is left to the author", () => {
@@ -197,4 +197,29 @@ describe("a surplus end that could be either", () => {
     expect(repair, "no repair offered").toBeDefined();
     expect(repair.description).toContain("removed an `end`");
   });
+});
+
+// A `repeat` needs a condition, and nothing in a file that forgot one says
+// what it should be. `until true` runs the loop exactly once; taking the
+// next statement as the condition invents one out of unrelated code. Both
+// compile and both run, which is what makes them worse than reporting the
+// error.
+describe("a repeat with no until is never given one", () => {
+  const UNCLOSED = [
+    "local i = 0\nrepeat\n\ti = i + 1",
+    "local i = 0\nrepeat i = i + 1 done",
+    "repeat print(1) end",
+    "local d = false\nrepeat print(1) d",
+    "repeat\n\tprint(1)\nprint(2)",
+    "local i = 0 repeat i = i + 1 i < 5",
+    "repeat until",
+  ];
+
+  for (const source of UNCLOSED) {
+    it(JSON.stringify(source).slice(0, 46), () => {
+      for (const repair of suggestRepairs(source)) {
+        expect(repair.fixed, "a condition was invented for the repeat").not.toMatch(/\buntil\b/);
+      }
+    });
+  }
 });
