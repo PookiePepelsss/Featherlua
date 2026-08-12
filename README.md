@@ -107,13 +107,17 @@ Same 96 scripts from [Stefanuk12/ROBLOX](https://github.com/Stefanuk12/ROBLOX) t
 | --- | --- | --- |
 | Source | 1,291,360 | |
 | Safe | 906,130 | 29.8% |
-| Medium | 881,546 | 31.7% |
+| Medium | 881,500 | 31.7% |
 | darklua 0.19 | 807,277 | 37.5% |
-| **Aggressive** | **734,909** | **43.1%** |
+| **Aggressive** | **734,885** | **43.1%** |
 
-Featherlua is **8.96% smaller overall**, a median of **6.13%** per file, and smaller on 95 of the 96 with the remaining one a tie. It is not larger anywhere.
+Featherlua is **8.97% smaller overall**, a median of **6.13%** per file, and smaller on 95 of the 96 with the remaining one a tie. It is not larger anywhere.
 
 Most of the gap is type stripping and constant propagation. darklua leaves `type Config = { ... }` in the output, and Luau erases it at runtime anyway.
+
+darklua is the faster of the two, and by a clear margin: about 850ms for those 96 files against 1,860ms here, and its figure includes reading and writing every file while this one does not. It is a native binary and this is TypeScript in a browser tab. If you are minifying on every commit, that matters more than the bytes; if you are compressing a script by hand, it does not.
+
+The two are not really the same tool. darklua is a build-pipeline program with a CLI, bundling, require resolution and configurable rules, and it handles Lua 5.1 as well as Luau. This is a box you paste a script into. Most of what darklua does more of are things this deliberately is not.
 
 Of those 96, 62 get far enough under a harness stubbing the executor globals to be compared, and all 62 print exactly the same thing before and after, in all three modes. A script written to run forever is stopped at a fixed point and compared as far as it got.
 
@@ -125,7 +129,11 @@ It is off by default because the alias keeps whatever the global held at load ti
 
 ## Tests
 
-`npm test`. The Luau WASM asset is pinned to playground revision `736e1d985f5a3315333e51f5b225b84a3fc3e6b6` and checked against a known hash before use.
+`npm test` runs about 1,200 checks across 47 files, and CI runs them on every push along with the types and a build.
+
+Most of them are not unit tests. Scripts are compiled and run by the official Luau build, before and after compression, and have to print the same thing; generated programs are put through every combination of passes; and the grammar this parser accepts is compared against the one Luau accepts, because the two bugs that produced output the compiler rejected both came from that gap.
+
+The Luau WASM asset is pinned to playground revision `736e1d985f5a3315333e51f5b225b84a3fc3e6b6` and checked against a known hash before use.
 
 ## Licence
 

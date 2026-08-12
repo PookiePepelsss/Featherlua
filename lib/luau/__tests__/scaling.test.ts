@@ -24,14 +24,13 @@ describe("compression stays roughly linear in the size of a block", () => {
     expect(timeCompress(flatBlock(100000))).toBeLessThan(15000);
   }, 60_000);
 
-  it("does not blow up between twenty and eighty thousand", () => {
-    // Quadratic would be a factor of sixteen for four times the input.
-    // Linear is about four. Six leaves room for noise without letting
-    // quadratic through.
-    const small = Math.max(timeCompress(flatBlock(20000)), 20);
-    const large = timeCompress(flatBlock(80000));
-    expect(large / small, `${small}ms then ${large}ms looks superlinear`).toBeLessThan(6);
-  }, 120_000);
+  it("handles forty thousand, where quadratic took five seconds", () => {
+    // Absolute bounds rather than a ratio between two timings. A ratio is
+    // mostly noise when both sides are fast, and it failed on a busy
+    // machine without anything being wrong. Quadratic took 5.2s here and
+    // 30s at a hundred thousand, so these bounds still catch it outright.
+    expect(timeCompress(flatBlock(40000))).toBeLessThan(3000);
+  }, 60_000);
 
   it("handles many small functions, the shape real code has", () => {
     const source = `${Array.from({ length: 16000 }, (_, i) => `local function f${i}(a) return a + ${i} end`).join("\n")}\nprint(f0(1))`;
