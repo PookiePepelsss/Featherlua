@@ -21,6 +21,8 @@ Then open `http://localhost:3000`, paste a script, and press Compress.
 
 **Auto Repair** fixes a script the compiler rejects, where the mistake has only one sensible reading: a missing `end`, `then`, `do` or comma, an unclosed bracket, or a stray `end`. A `repeat` with no `until` condition is left unchanged because inventing a condition would change its behavior. Anything ambiguous is reported rather than guessed at. Off by default, in which case the fix is offered instead.
 
+Type **`run tests`** into the input box and press Compress to check the build in front of you: a dozen scripts are compiled, run, compressed in all three modes, and every output has to compile, run, and print exactly what the original printed.
+
 Every input and output goes through the official Luau WebAssembly compiler before you see a result.
 
 Luau only. Lua 5.1 to 5.4 and LuaJIT are out of scope. Shebangs, `--!` directives and licence headers survive every mode.

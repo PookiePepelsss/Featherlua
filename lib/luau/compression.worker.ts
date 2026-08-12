@@ -4,6 +4,7 @@ import { compressAggressive } from "./compress-aggressive";
 import type { CompressionRequest, CompressionResponse } from "./compression-protocol";
 import { compressSafe, verifySafeCompression } from "./compress-safe";
 import { suggestRepairs } from "./repair";
+import { runSelfTest, SELF_TEST_COMMAND } from "./self-test";
 import {
   compileWithOfficialLuau,
   createOfficialLuau,
@@ -50,6 +51,22 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
   let repairWasDeclined = false;
   try {
     const module = await getOfficialModule();
+
+    // A command rather than a script. `run tests` checks this build of the
+    // compressor against the official compiler and reports back in the
+    // output box. It is not valid Luau, so nothing can be shadowed by it.
+    if (SELF_TEST_COMMAND.test(request.source)) {
+      const report = runSelfTest(module);
+      self.postMessage({
+        id: request.id,
+        ok: true,
+        output: report.text,
+        warning: report.failed ? `${report.failed} self-check(s) failed. This build is not behaving correctly.` : undefined,
+        durationMs: performance.now() - started,
+        rolledBack: [],
+      } satisfies CompressionResponse);
+      return;
+    }
 
     // With Auto Repair on, a script the compiler will not accept gets one
     // verified edit applied before anything else runs, so the rest of the

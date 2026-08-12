@@ -653,16 +653,21 @@ function isTerminator(stat: Stat): boolean {
   );
 }
 
-// A goto elsewhere (including one that already ran, earlier in this same
-// block) can only target a label directly in this block or an enclosing
-// one -- Luau's scoping never lets a label inside a nested do/if/loop body
-// be jumped to from outside it. So only a label at THIS level, not nested
-// deeper, can make code after a terminator reachable.
-function hasTopLevelLabel(stats: Stat[]): boolean {
-  return stats.some((s) => s.type === "LabelStat");
-}
 
 function optimizeBlock(stats: Stat[]): Stat[] {
+  // Where the last label of this block sits. Only a label after the
+  // current statement can make code past a terminator reachable, and
+  // asking that by slicing the tail and scanning it on every iteration
+  // made this pass quadratic: twenty thousand statements in one block took
+  // eight hundred milliseconds, almost all of it here.
+  let lastLabel = -1;
+  for (let i = stats.length - 1; i >= 0; i -= 1) {
+    if (stats[i].type === "LabelStat") {
+      lastLabel = i;
+      break;
+    }
+  }
+
   const kept: Stat[] = [];
   for (let i = 0; i < stats.length; i += 1) {
     const result = optimizeStat(stats[i]);
@@ -670,8 +675,7 @@ function optimizeBlock(stats: Stat[]): Stat[] {
     // A do-block whose body ends in a terminator terminates the parent too:
     // nothing after it can run, so the rest of the block goes and the
     // wrapper is free to inline as the new last statement.
-    const rest = stats.slice(i + 1);
-    const reachable = hasTopLevelLabel(rest);
+    const reachable = lastLabel > i;
     const terminates =
       isTerminator(result) || (result.type === "DoStat" && endsInTerminator(result.body));
     if (result.type === "DoStat" && canInlineDoBlock(result, i === stats.length - 1 || (terminates && !reachable))) {

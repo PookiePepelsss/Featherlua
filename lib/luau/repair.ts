@@ -284,8 +284,12 @@ function surplusEndRepair(source: string, error: ParseError): Repair | undefined
       // just as well and nests the code differently, and both compile, so
       // the mistake would be silent. Where a second removal also works,
       // this is a judgement about intent and belongs to the author.
-      if (ambiguousEndRemoval(source, at)) return undefined;
-      return { description: "removed an `end` with no block left to close", fixed, line: lineOf(source, at) };
+      const ambiguity = ambiguousEndRemoval(source, at);
+      if (ambiguity === "yes") return undefined;
+      const description = ambiguity === "unchecked"
+        ? "removed an `end` with no block left to close (this file is too large to check whether removing a different one would read the same, so look before you keep it)"
+        : "removed an `end` with no block left to close";
+      return { description, fixed, line: lineOf(source, at) };
     }
   }
   return undefined;
@@ -305,13 +309,18 @@ function withoutEndAt(source: string, at: number) {
 // stands rather than spending seconds to second-guess it.
 const AMBIGUITY_CHECK_LIMIT = 120000;
 
-function ambiguousEndRemoval(source: string, chosen: number): boolean {
-  if (source.length > AMBIGUITY_CHECK_LIMIT) return false;
+/**
+ * Whether removing some other `end` would read just as well. "unchecked"
+ * means the file was too large to ask: the answer is unknown, not no, and
+ * the caller says so rather than implying the question was settled.
+ */
+function ambiguousEndRemoval(source: string, chosen: number): "yes" | "no" | "unchecked" {
+  if (source.length > AMBIGUITY_CHECK_LIMIT) return "unchecked";
   let chosenChunk;
   try {
     chosenChunk = parse(withoutEndAt(source, chosen)).chunk;
   } catch {
-    return false;
+    return "no";
   }
   for (const token of codeTokens(source)) {
     if (token.text !== "end" || token.index === chosen) continue;
@@ -324,9 +333,9 @@ function ambiguousEndRemoval(source: string, chosen: number): boolean {
     // Removing either of two `end`s that close at the same place gives
     // different text and the same program, which is no ambiguity at all.
     // Only a genuinely different nesting counts.
-    if (!structurallyEqual(chosenChunk, otherChunk).equal) return true;
+    if (!structurallyEqual(chosenChunk, otherChunk).equal) return "yes";
   }
-  return false;
+  return "no";
 }
 
 /** Inserts a keyword the parser said it wanted, at the point it wanted it. */

@@ -171,7 +171,7 @@ export default function Home() {
               invalidateResult();
             }}
             spellCheck={false}
-            placeholder="Paste code here"
+            placeholder="Paste code here, or type: run tests"
             autoFocus
           />
         </div>

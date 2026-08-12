@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # The suite compiles and runs scripts through the official Luau
+      # WebAssembly build, so this is the real gate, not a smoke test.
+      - name: Tests
+        run: npm test
+
+      # The pre-existing worker types error is gone, so any output here is
+      # a new problem.
+      - name: Types
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Build
+        run: npm run build

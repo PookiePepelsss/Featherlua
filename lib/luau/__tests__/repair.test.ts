@@ -223,3 +223,27 @@ describe("a repeat with no until is never given one", () => {
     });
   }
 });
+
+// Above a size limit the ambiguity check is skipped, because asking costs
+// a parse per `end`. Skipping it is fine; implying it passed is not.
+describe("a file too large to check for ambiguity says so", () => {
+  function bigSurplusEnd() {
+    // Padding that parses on its own, then one `end` closing nothing.
+    const filler = Array.from({ length: 9000 }, (_, i) => `local v${i} = ${i}`).join("\n");
+    return `${filler}\nprint(v0)\nend`;
+  }
+
+  it("warns rather than claiming the choice was checked", () => {
+    const source = bigSurplusEnd();
+    expect(source.length).toBeGreaterThan(120000);
+    const [repair] = suggestRepairs(source);
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.description).toContain("too large to check");
+  });
+
+  it("says nothing extra when the file is small enough to check", () => {
+    const [repair] = suggestRepairs("local x = 1\nprint(x)\nend");
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.description).toBe("removed an `end` with no block left to close");
+  });
+});
