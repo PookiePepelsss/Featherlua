@@ -32,7 +32,17 @@ local function __fmt(value, depth)
   end
   return "{" .. table.concat(parts, ",") .. "}"
 end
+-- A script looping until its wait budget runs out can record millions of
+-- calls, and the whole log crosses back as one string. Both runs stop at
+-- the same entry, so cutting it off keeps the comparison honest and the
+-- memory bounded.
+local __LOG_LIMIT = 20000
+local __truncated = false
 local function __rec(name, ...)
+  if #__log >= __LOG_LIMIT then
+    __truncated = true
+    return
+  end
   local n = select("#", ...)
   local parts = {}
   for i = 1, n do parts[i] = __fmt((select(i, ...))) end
@@ -40,6 +50,7 @@ local function __rec(name, ...)
 end
 function __dumplog()
   for _, entry in ipairs(__log) do print(entry) end
+  if __truncated then print("[log truncated at " .. __LOG_LIMIT .. " entries]") end
 end
 
 local function __stub(name, result)
@@ -228,7 +239,12 @@ local __waits = 0
 local __WAIT_BUDGET = 2000
 wait = function(t)
   __waits = __waits + 1
-  if __waits > __WAIT_BUDGET then error("harness: this script waits forever", 0) end
+  if __waits > __WAIT_BUDGET then
+    -- What it managed before being stopped is still worth comparing, and
+    -- both runs stop at the same point, so dump the log before giving up.
+    __dumplog()
+    error("harness: this script waits forever", 0)
+  end
   __ticks = __ticks + (t or 0.03)
   __rec("wait", t)
   return t or 0.03
@@ -260,6 +276,25 @@ Font = {
   fromName = function(n, weight, style) return { Family = n, Weight = weight, Style = style } end,
   fromId = function(id, weight, style) return { Family = id, Weight = weight, Style = style } end,
 }
+-- Executor scripts routinely pull a library from the web and rely on the
+-- globals it installs. The library cannot be fetched here, so the services
+-- it would have provided are named directly. Every one is a real Roblox
+-- service, so nothing unknown becomes truthy by accident.
+for _, name in ipairs({
+  "RunService", "Players", "Workspace", "UserInputService", "ReplicatedStorage",
+  "ReplicatedFirst", "Lighting", "TweenService", "HttpService", "StarterGui",
+  "CoreGui", "TeleportService", "MarketplaceService", "SoundService",
+  "PathfindingService", "CollectionService", "Debris", "ContextActionService",
+  "GuiService", "TextChatService", "ProximityPromptService", "VirtualUser",
+  "VirtualInputManager", "StarterPlayer", "ServerStorage", "Chat", "Stats",
+  "LocalizationService", "PolicyService", "InsertService", "ContentProvider",
+}) do
+  if rawget(_G or {}, name) == nil then
+    (getfenv and getfenv() or _ENV)[name] = __proxy(name)
+  end
+end
+Camera = __proxy("Camera")
+
 settings = function() return __proxy("settings") end
 UserSettings = function() return __proxy("UserSettings") end
 `;

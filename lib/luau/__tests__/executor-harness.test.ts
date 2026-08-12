@@ -102,3 +102,68 @@ describe("a script that waits forever is stopped rather than hung", () => {
     expect(result.output).toContain("5");
   });
 });
+
+// A script that pulls its library from the web relies on the globals that
+// library installs. Nothing can be fetched here, so the services it would
+// have provided are named directly. Ten corpus scripts died on the first
+// line that touched one.
+describe("services a fetched library would have installed", () => {
+  const SERVICES = [
+    "RunService", "Players", "Workspace", "UserInputService",
+    "ReplicatedStorage", "Lighting", "TweenService", "HttpService",
+    "StarterGui", "CoreGui", "Camera",
+  ];
+
+  for (const name of SERVICES) {
+    it(`${name} is there without asking for it`, () => {
+      const result = run(`print(tostring(${name}))`);
+      expect(result.success, `${name} is missing: ${result.error}`).toBe(true);
+      expect(result.output).toContain(name);
+    });
+  }
+
+  it("reaches the signal a render loop connects to", () => {
+    const result = run(`local stepped = RunService.RenderStepped
+stepped:Connect(function() end)
+RunService.Heartbeat:Connect(function() end)
+print("connected")`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.output).toContain("connected");
+  });
+});
+
+// A loop running to its wait budget can record millions of calls, and the
+// whole log crosses back as one string. Capping it keeps memory bounded
+// while leaving both runs cut off at the same entry.
+describe("the recorded log cannot grow without bound", () => {
+  it("truncates rather than returning tens of megabytes", () => {
+    const result = run(`for i = 1, 200000 do setclipboard("entry " .. i) end print("done")`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.output).toContain("[log truncated");
+    expect(result.output.length).toBeLessThan(2_000_000);
+  });
+
+  it("says nothing about truncation when the log is short", () => {
+    const result = run(`setclipboard("one") print("done")`);
+    expect(result.success, result.error).toBe(true);
+    expect(result.output).not.toContain("truncated");
+  });
+});
+
+// A script written to run forever still did something first, and both runs
+// stop at the same point, so what it managed is worth comparing.
+describe("a script stopped at its wait budget still reports what it did", () => {
+  it("prints the log before giving up", () => {
+    const result = run(`setclipboard("before the loop")
+while true do wait() end`);
+    expect(result.success).toBe(false);
+    expect(result.error ?? "").toContain("waits forever");
+    expect(result.output, "nothing survived to compare").toContain("before the loop");
+  });
+
+  it("stops at the same point every time", () => {
+    const script = `local n = 0
+while true do n = n + 1 setclipboard("tick " .. n) wait() end`;
+    expect(run(script).output).toBe(run(script).output);
+  });
+});

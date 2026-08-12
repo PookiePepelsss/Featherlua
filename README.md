@@ -115,7 +115,7 @@ Featherlua is **8.96% smaller overall**, a median of **6.13%** per file, and sma
 
 Most of the gap is type stripping and constant propagation. darklua leaves `type Config = { ... }` in the output, and Luau erases it at runtime anyway.
 
-Of those 96, the 56 that will run under a harness stubbing the executor globals print exactly the same thing before and after, in all three modes.
+Of those 96, 62 get far enough under a harness stubbing the executor globals to be compared, and all 62 print exactly the same thing before and after, in all three modes. A script written to run forever is stopped at a fixed point and compared as far as it got.
 
 ## Global aliasing
 

@@ -170,6 +170,13 @@ export default function Home() {
               setSource(event.target.value);
               invalidateResult();
             }}
+            onKeyDown={(event) => {
+              // Ctrl+Enter compresses without reaching for the mouse.
+              if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && source.trim() && !working) {
+                event.preventDefault();
+                compress();
+              }
+            }}
             spellCheck={false}
             placeholder="Paste code here, or type: run tests"
             autoFocus
