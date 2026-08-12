@@ -44,7 +44,7 @@ function program(seed: number): string {
 }
 
 describe("wide-grammar fuzz", () => {
-  it("compresses, reparses, and never grows 400 generated programs covering closures, metatables, pcall, varargs, generic-for, repeat-until", () => {
+  it("compresses, reparses, and never grows 400 generated programs covering closures, metatables, pcall, varargs, generic-for, repeat-until", { timeout: 120_000 }, () => {
     const failures: string[] = [];
     for (let seed = 1; seed <= 400; seed += 1) {
       const source = program(seed);

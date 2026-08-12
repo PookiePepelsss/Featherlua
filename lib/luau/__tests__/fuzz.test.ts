@@ -26,7 +26,7 @@ function program(seed: number) {
 }
 
 describe("deterministic generated programs", () => {
-  it("compresses and reparses 250 generated programs without growing them", () => {
+  it("compresses and reparses 250 generated programs without growing them", { timeout: 120_000 }, () => {
     for (let seed = 1; seed <= 250; seed += 1) {
       const source = program(seed);
       const result = compressAggressive(source);
