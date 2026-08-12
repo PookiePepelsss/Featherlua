@@ -7,7 +7,6 @@ import {
   type AggressiveOptions,
 } from "@/lib/luau/compress-aggressive";
 import type { CompressionMode, CompressionRequest, CompressionResponse } from "@/lib/luau/compression-protocol";
-import type { BehaviourRequest, BehaviourResponse } from "@/lib/luau/behaviour-protocol";
 
 interface Stats {
   inputChars: number;
@@ -55,76 +54,16 @@ export default function Home() {
   const [repair, setRepair] = useState<{ description: string; line: number; fixed: string; applied: boolean } | null>(null);
   const [options, setOptions] = useState<AggressiveOptions>(DEFAULT_AGGRESSIVE_OPTIONS);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [behaviour, setBehaviour] = useState<{ state: "running" | "same" | "differs" | "inconclusive"; detail: string } | null>(null);
   const workerRef = useRef<Worker | null>(null);
-  const behaviourWorker = useRef<Worker | null>(null);
-  const behaviourTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRequest = useRef<number | null>(null);
   const pendingSource = useRef("");
   const requestId = useRef(0);
 
   useEffect(() => () => {
     workerRef.current?.terminate();
-    behaviourWorker.current?.terminate();
   }, []);
 
-  // A script under test can loop forever, and there is no way to interrupt
-  // the runtime once it is inside one. The worker is disposable and holds
-  // nothing the page needs, so the timeout simply throws it away.
-  const BEHAVIOUR_TIMEOUT_MS = 10_000;
-
-  function clearBehaviourTimer() {
-    if (behaviourTimer.current !== null) clearTimeout(behaviourTimer.current);
-    behaviourTimer.current = null;
-  }
-
-  function discardBehaviourWorker() {
-    clearBehaviourTimer();
-    behaviourWorker.current?.terminate();
-    behaviourWorker.current = null;
-  }
-
-  function checkBehaviour() {
-    clearBehaviourTimer();
-    setBehaviour({ state: "running", detail: "" });
-    const id = ++requestId.current;
-    // The worker is kept between checks. It holds a compiled copy of the
-    // Luau runtime, and building that again per click is most of the wait.
-    // Only a worker stuck inside a script is thrown away.
-    const worker =
-      behaviourWorker.current ??
-      new Worker(new URL("../lib/luau/behaviour.worker.ts", import.meta.url), { type: "module" });
-    behaviourWorker.current = worker;
-    worker.onmessage = (event: MessageEvent<BehaviourResponse>) => {
-      if (event.data.id !== id) return;
-      const result = event.data;
-      clearBehaviourTimer();
-      if (result.verdict === "same") {
-        setBehaviour({
-          state: "same",
-          detail: `Both ran under a stubbed executor and printed the same ${result.lines} line${result.lines === 1 ? "" : "s"}.`,
-        });
-      } else {
-        setBehaviour({ state: result.verdict, detail: result.detail });
-      }
-    };
-    worker.onerror = (event) => {
-      discardBehaviourWorker();
-      setBehaviour({ state: "inconclusive", detail: event.message || "The behaviour worker failed." });
-    };
-    behaviourTimer.current = setTimeout(() => {
-      discardBehaviourWorker();
-      setBehaviour({
-        state: "inconclusive",
-        detail: `Neither run finished within ${BEHAVIOUR_TIMEOUT_MS / 1000} seconds, so this proves nothing either way. A script that waits on something it cannot have here will do that.`,
-      });
-    }, BEHAVIOUR_TIMEOUT_MS);
-    const request: BehaviourRequest = { id, original: pendingSource.current || source, compressed: output };
-    worker.postMessage(request);
-  }
-
   function invalidateResult() {
-    setBehaviour(null);
     if (activeRequest.current !== null) {
       workerRef.current?.terminate();
       workerRef.current = null;
@@ -293,20 +232,6 @@ export default function Home() {
 
       {warning && <div className="warning" role="status">{warning}</div>}
 
-      {behaviour && behaviour.state !== "running" && (
-        <div className={`behaviour behaviour-${behaviour.state}`} role="status">
-          <strong>
-            {behaviour.state === "same"
-              ? "Behaves the same"
-              : behaviour.state === "differs"
-                ? "Behaves differently"
-                : "Could not tell"}
-          </strong>{" "}
-          {behaviour.detail}
-          {behaviour.state === "same" && " A stub is not your executor, so this is evidence rather than proof."}
-        </div>
-      )}
-
       {mode !== "safe" && (
         <fieldset className="options" aria-label="Compression passes">
           <legend className="srOnly">Compression passes</legend>
@@ -352,13 +277,6 @@ export default function Home() {
           {copied ? "Copied" : "Copy"}
         </button>
         <button onClick={downloadOutput} disabled={!output || Boolean(error)}>Download</button>
-        <button
-          onClick={checkBehaviour}
-          disabled={!output || Boolean(error) || behaviour?.state === "running"}
-          title="Run the original and the compressed script side by side under a stubbed executor and compare what they print."
-        >
-          {behaviour?.state === "running" ? "Running…" : "Check behaviour"}
-        </button>
       </div>
     </main>
   );

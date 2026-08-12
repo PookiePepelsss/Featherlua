@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { compressAggressive, DEFAULT_AGGRESSIVE_OPTIONS, type AggressiveOptions } from "../compress-aggressive";
 import { createOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
-import { withExecutorHarness } from "../executor-harness";
+import { withExecutorHarness } from "./executor-harness";
 import { executorScenarios } from "./executor-scenarios";
 import { largeExecutorScripts } from "./executor-large-scripts";
 

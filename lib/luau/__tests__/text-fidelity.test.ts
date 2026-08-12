@@ -7,7 +7,7 @@ import {
   MEDIUM_AGGRESSIVE_OPTIONS,
 } from "../compress-aggressive";
 import { compressSafe } from "../compress-safe";
-import { withExecutorHarness } from "../executor-harness";
+import { withExecutorHarness } from "./executor-harness";
 import { createOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
 
 // What a label says and what it is set in are the two things a user checks

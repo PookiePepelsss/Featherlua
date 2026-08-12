@@ -6,7 +6,7 @@ import {
   MEDIUM_AGGRESSIVE_OPTIONS,
 } from "../compress-aggressive";
 import { compressSafe } from "../compress-safe";
-import { withExecutorHarness } from "../executor-harness";
+import { withExecutorHarness } from "./executor-harness";
 import {
   compileWithOfficialLuau,
   createOfficialLuau,

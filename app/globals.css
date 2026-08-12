@@ -434,32 +434,3 @@ button.copied {
 @media (max-width: 430px) {
   .options { grid-template-columns: 1fr; }
 }
-
-.behaviour {
-  border: 1px solid #2f4a2c;
-  border-radius: 9px;
-  padding: 11px 14px;
-  background: #101710;
-  color: #b7d9a8;
-  font-size: 12px;
-  line-height: 1.5;
-  animation: fadeSlideIn 220ms ease;
-}
-
-.behaviour strong { color: #d6f0c8; }
-
-.behaviour-differs {
-  border-color: #6d2f2f;
-  background: #180f0f;
-  color: #e8a8a8;
-}
-
-.behaviour-differs strong { color: #ffc9c9; }
-
-.behaviour-inconclusive {
-  border-color: #3a3f4a;
-  background: #101216;
-  color: #a9b2c3;
-}
-
-.behaviour-inconclusive strong { color: #d2d9e6; }

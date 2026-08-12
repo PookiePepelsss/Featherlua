@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { withExecutorHarness } from "../executor-harness";
+import { withExecutorHarness } from "./executor-harness";
 import { createOfficialLuau, executeWithOfficialLuau, type LuauModule } from "../official/runtime";
 
 // The harness decides how much of a real corpus can be checked by running
