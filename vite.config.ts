@@ -46,9 +46,15 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    server: {
+      // The preview is served from generated *.v0.build / *.vusercontent.net
+      // hosts. Vite rejects unknown Host headers by default, which breaks the
+      // dynamic module fetch, so explicitly allow those preview domains.
+      allowedHosts: [".v0.build", ".vusercontent.net", ".vercel.app"],
+      ...(isCodexSeatbeltSandbox
+        ? { watch: { useFsEvents: false, usePolling: true } }
+        : {}),
+    },
     plugins: [
       vinext(),
       cloudflare({
