@@ -254,6 +254,12 @@ Axes = { new = function() return {} end }
 Faces = { new = function() return {} end }
 PhysicalProperties = { new = function(...) return {} end }
 UDim = { new = function(a, b) return { Scale = a, Offset = b } end }
+Font = {
+  new = function(family, weight, style) return { Family = family, Weight = weight, Style = style } end,
+  fromEnum = function(e) return { Family = tostring(e) } end,
+  fromName = function(n, weight, style) return { Family = n, Weight = weight, Style = style } end,
+  fromId = function(id, weight, style) return { Family = id, Weight = weight, Style = style } end,
+}
 settings = function() return __proxy("settings") end
 UserSettings = function() return __proxy("UserSettings") end
 `;
