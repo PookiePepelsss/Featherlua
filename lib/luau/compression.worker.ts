@@ -27,14 +27,24 @@ const officialModule = loadOnce(async (): Promise<LuauModule> => {
 
 const getOfficialModule = () => officialModule.get();
 
-// The compiler runs in a fixed amount of WebAssembly memory. A large
-// enough script exhausts it, and Emscripten answers by aborting the whole
-// instance, which then fails every call after it. Saying "memory access
-// out of bounds" tells nobody anything, and keeping the dead instance
-// meant one oversized script broke the tab until it was reloaded.
-const RAN_OUT_OF_MEMORY =
-  "The official Luau compiler ran out of memory on this script. It runs inside the page with a fixed amount of memory, " +
-  "so a very large script can exhaust it. The compiler has been reloaded, so smaller scripts will work again.";
+// The compiler runs in a fixed amount of WebAssembly memory: the binary
+// declares 32MB to start and 512MB at most, and the glue around it refuses
+// to grow past that. Exhausting it does not report a problem, it aborts
+// the whole instance, which then fails every call after it. Saying "memory
+// access out of bounds" tells nobody anything, and keeping the dead
+// instance meant one oversized script broke the tab until it was reloaded.
+//
+// Measured, a script of ordinary density stops fitting a little past a
+// megabyte. What is in it matters as much as how long it is, so the figure
+// below is offered as roughly where the wall is rather than as a rule.
+function ranOutOfMemory(source: string): string {
+  const megabytes = (new TextEncoder().encode(source).length / 1048576).toFixed(2);
+  return (
+    `The official Luau compiler ran out of memory on this script (${megabytes} MB). It runs inside the page in a ` +
+    "fixed amount of memory, and in practice scripts stop fitting somewhere around a megabyte, depending on what " +
+    "is in them. The compiler has been reloaded, so anything smaller will work again."
+  );
+}
 
 function compilerError(kind: "input" | "output", detail?: string) {
   return `Official Luau compiler rejected the ${kind}: ${detail ?? "unknown compiler error"}`;
@@ -143,7 +153,7 @@ self.onmessage = async (event: MessageEvent<CompressionRequest>) => {
     if (isRuntimeCollapse(error)) {
       // The instance is past saving; drop it so the next press gets a new one.
       officialModule.forget();
-      response = { id: request.id, ok: false, error: RAN_OUT_OF_MEMORY };
+      response = { id: request.id, ok: false, error: ranOutOfMemory(request.source) };
     } else {
       response = { id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) };
     }

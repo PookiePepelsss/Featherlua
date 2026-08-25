@@ -27,6 +27,8 @@ Every input and output goes through the official Luau WebAssembly compiler befor
 
 Luau only. Lua 5.1 to 5.4 and LuaJIT are out of scope. Shebangs, `--!` directives and licence headers survive every mode.
 
+There is a size limit, and it comes from the compiler rather than from the compressor. The official Luau build runs inside the page in a fixed amount of memory, 32MB to start and 512MB at most, and a script of ordinary density stops fitting a little past a megabyte. Past that it is refused with an explanation rather than a crash, and the compiler is rebuilt so the next script works. What is in a script matters as much as how long it is, so treat a megabyte as roughly where the wall is rather than as a rule.
+
 ## Before and after
 
 A short executor script, with types, a branch that cannot run, a local nothing reads, and a couple of constants:
