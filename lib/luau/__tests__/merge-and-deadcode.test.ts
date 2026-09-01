@@ -54,14 +54,6 @@ describe("scratch: dead code after terminator", () => {
     const o = out('for i=1,3 do if true then continue end print("dead") end');
     expect(o).not.toContain("dead");
   });
-  it("drops code after goto when no top-level label follows", () => {
-    const o = out('do\n  goto done\n  print("dead")\nend\n::done::');
-    expect(o).not.toContain("dead");
-  });
-  it("keeps code after goto when a top-level label follows", () => {
-    const o = out('do\n  goto done\n  print("dead")\n  ::done::\nend');
-    expect(o).toContain("dead");
-  });
 });
 
 // A merged declaration evaluates every value before assigning any of them,

@@ -239,3 +239,107 @@ describe("regression: names that collide with Object.prototype", () => {
     });
   }
 });
+
+describe("regression: a statement starting with `(` keeps its boundary", () => {
+  // Without the `;`, `local a=b` followed by `(f or g)()` re-parses as one
+  // call chain, and the equivalence check refused perfectly good input.
+  it("after a declaration ending in a name", () => {
+    const result = compressAggressive("local a=b;(f or g)()");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("local a=b;(f or g)()");
+    expect(parse(result.output).chunk.body).toHaveLength(2);
+  });
+
+  it("after a call", () => {
+    const result = compressAggressive("f();(g)()");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(parse(result.output).chunk.body).toHaveLength(2);
+  });
+
+  it("not at the start of the chunk, where there is nothing to run into", () => {
+    const result = compressAggressive("(f or g)()");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("(f or g)()");
+  });
+});
+
+describe("regression: interpolation opening straight into a table", () => {
+  // Luau's lexer refuses `{{` inside a backtick string, so a part that
+  // prints starting with `{` needs a space after the interpolation brace.
+  it("a bare table constructor", () => {
+    const result = compressAggressive("local n=1 print(`{ {n} }`)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("print(`{ {1}}`)");
+  });
+
+  it("a comparison led by a table", () => {
+    const result = compressAggressive("print(`{ {} == {} }`)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("print(`{ {}=={}}`)");
+  });
+
+  it("no space where the part starts with anything else", () => {
+    const result = compressAggressive("local n=1 print(`{n}`)");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("print(`{1}`)");
+  });
+});
+
+describe("regression: `:: T` truncates multi-values, and stripping it must too", () => {
+  // `select("#", f() :: any)` is 1 in Luau; handing back the bare call made
+  // it 2. The parens carry the truncation the assertion performed.
+  it("assertion on a call", () => {
+    const result = compressAggressive('print(select("#", f() :: any))');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe('print(select("#",(f())))');
+  });
+
+  it("assertion on vararg", () => {
+    const result = compressAggressive('return function(...) return select("#", ... :: any) end');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe('return function(...)return select("#",(...))end');
+  });
+
+  it("assertion on a single value needs no parens", () => {
+    const result = compressAggressive("return x :: any");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("return x");
+  });
+});
+
+describe("regression: `goto` is an ordinary Luau identifier", () => {
+  it("declares, reads, and indexes under the name", () => {
+    const result = compressAggressive('local goto = 2 local t = { goto = goto } return t["goto"]');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("local a={goto=2}return a.goto");
+  });
+});
+
+describe("regression: compound assignment stays within one member step", () => {
+  // `t.a.n += 1` evaluates `t.a` once where the spelled-out form reads it
+  // twice, which a hooked `__index` observes; one step keeps the counts
+  // identical, so only that folds.
+  it("one step folds", () => {
+    const result = compressAggressive("local t={n=1} t.n = t.n + 1 return t");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("local a={n=1}a.n+=1 return a");
+  });
+
+  it("two steps stay spelled out", () => {
+    const result = compressAggressive("local t={a={n=1}} t.a.n = t.a.n + 1 return t");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.output).toBe("local a={a={n=1}}a.a.n=a.a.n+1 return a");
+  });
+});

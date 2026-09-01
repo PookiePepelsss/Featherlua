@@ -51,9 +51,9 @@ describe("lexer: non-interpolated subset", () => {
     ]);
   });
 
-  it("tokenizes goto labels and the :: symbol", () => {
-    expect(texts("::top:: goto top")).toEqual([
-      "Symbol:::", "Name:top", "Symbol:::", "Keyword:goto", "Name:top", "Eof:",
+  it("reads `goto` as an ordinary name, since Luau never reserved it", () => {
+    expect(texts("local goto = top")).toEqual([
+      "Keyword:local", "Name:goto", "Symbol:=", "Name:top", "Eof:",
     ]);
   });
 

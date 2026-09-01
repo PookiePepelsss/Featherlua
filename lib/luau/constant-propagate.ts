@@ -317,8 +317,6 @@ function collectStat(
       return;
     case "BreakStat":
     case "ContinueStat":
-    case "GotoStat":
-    case "LabelStat":
     case "TypeAliasStat":
       return;
   }

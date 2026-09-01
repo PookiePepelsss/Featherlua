@@ -41,11 +41,10 @@ describe("parser: grammar wrinkles", () => {
     expect(bin.right.type).toBe("TypeAssertionExpr");
   });
 
-  it("`::` used as a goto label is distinct from `::` as a type assertion in the same file", () => {
-    const { chunk } = parse("::top::\nlocal y = 1 :: number\ngoto top");
-    expect(chunk.body[0].type).toBe("LabelStat");
-    expect((chunk.body[1] as LocalStat).init[0].type).toBe("TypeAssertionExpr");
-    expect(chunk.body[2].type).toBe("GotoStat");
+  it("`goto` works as a plain identifier everywhere, since Luau has no goto", () => {
+    const { chunk } = parse("local goto = 1\nprint(goto, t.goto)");
+    expect(chunk.body[0].type).toBe("LocalStat");
+    expect(chunk.body[1].type).toBe("CallStat");
   });
 
   it("double type-assertion requires explicit parens", () => {
@@ -207,11 +206,11 @@ describe("parser: grammar wrinkles", () => {
     expect(() => parse("local r = f(`hi {x}`)")).not.toThrow();
   });
 
-  it("a bare simpleexp immediately followed by a label is a genuine grammar ambiguity (`::` greedily continues as a type assertion, per asexp ::= simpleexp ['::' Type]); a semicolon disambiguates", () => {
-    // `1` greedily absorbs `:: top` as a type assertion, leaving the
-    // label's closing `::` dangling with nothing after it -- this is
-    // inherent to the grammar, not a parser bug.
-    expect(() => parse("local x = 1\n::top::")).toThrow();
-    expect(() => parse("local x = 1;\n::top::")).not.toThrow();
+  it("a label statement is rejected the way Luau rejects it", () => {
+    // Luau has no goto, so `::name::` in statement position is an error;
+    // `::` survives only as the type assertion operator.
+    expect(() => parse("::top::")).toThrow();
+    expect(() => parse("local x = 1;\n::top::")).toThrow();
+    expect(() => parse("goto top")).toThrow();
   });
 });

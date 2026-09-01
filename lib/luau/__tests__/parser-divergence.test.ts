@@ -44,6 +44,7 @@ const BOTH_ACCEPT = [
   "local a = b :: number", "local function f<T>(x: T): T return x end",
   "type F = (number) -> string", "local a: number? = nil",
   "function a.b.c:d() end", "local t = {1, 2,}", "local t = {1; 2}",
+  "local goto = 1", "print(t.goto)",
   "local s = `a{1}b`", "local a = -2^2", "local a = not not x",
   "local a = if x then 1 else 2", "local a = 1 // 2",
   "print(1)(2)", "(f)()", "local a = (...)",
@@ -51,7 +52,11 @@ const BOTH_ACCEPT = [
 ];
 
 // Rejected by both. Nothing to do, but a change here is worth knowing.
-const BOTH_REJECT = ["local = = = 3", "a = 1 = 2", "local t = {,}", "function f(a,) end"];
+const BOTH_REJECT = [
+  "local = = = 3", "a = 1 = 2", "local t = {,}", "function f(a,) end",
+  // Luau never took goto from Lua 5.2, and neither parser humors it.
+  "::a:: goto a", "goto nowhere",
+];
 
 // Accepted here, rejected by Luau. Each is safe only because no pass
 // produces it; if one ever does, the output will not compile.
@@ -69,8 +74,6 @@ const ONLY_OURS = [
   "local a <bogus> = 1",
   "continue",
   "break",
-  "::a:: goto a",
-  "goto nowhere",
   "local s = `{{}}`",
   ";;;",
   "local a = 1;;",
@@ -106,6 +109,6 @@ describe("forms only this parser accepts", () => {
   }
 
   it("has not grown", () => {
-    expect(ONLY_OURS).toHaveLength(15);
+    expect(ONLY_OURS).toHaveLength(13);
   });
 });

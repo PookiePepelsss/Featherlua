@@ -114,8 +114,6 @@ function stripStat(stat: Stat) {
       return;
     case "BreakStat":
     case "ContinueStat":
-    case "GotoStat":
-    case "LabelStat":
       return;
     case "TypeAliasStat":
       return; // unreachable: filtered out in stripBlock
@@ -166,7 +164,7 @@ function stripExpr(expr: Expr): Expr {
     case "UnaryExpr":
       expr.operand = stripExpr(expr.operand);
       return expr;
-    case "TypeAssertionExpr":
+    case "TypeAssertionExpr": {
       // `(x :: number)` and `x` are runtime-identical -- the assertion is a
       // compile-time-only type-checker hint, not a runtime cast. Replace
       // the whole node with the (recursively stripped) inner expression.
@@ -175,7 +173,14 @@ function stripExpr(expr: Expr): Expr {
         expr.expr = stripExpr(expr.expr);
         return expr;
       }
-      return stripExpr(expr.expr);
+      // One thing about the assertion IS observable: like parentheses, it
+      // truncates a call or `...` to a single value, so `f(g() :: any)`
+      // passes one argument where `f(g())` passes them all. Handing back
+      // the bare call would change that; parens keep the truncation.
+      const inner = stripExpr(expr.expr);
+      const multiValue = inner.type === "CallExpr" || inner.type === "MethodCallExpr" || inner.type === "VarargExpr";
+      return multiValue ? { type: "ParenExpr", expr: inner } : inner;
+    }
     case "IfExpr":
       expr.cond = stripExpr(expr.cond);
       expr.thenExpr = stripExpr(expr.thenExpr);

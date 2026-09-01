@@ -271,16 +271,6 @@ class Comparator {
       case "BreakStat":
       case "ContinueStat":
         return;
-      case "GotoStat": {
-        const other = b as typeof a;
-        if (a.label !== other.label) this.fail(`goto label '${a.label}' vs '${other.label}'`);
-        return;
-      }
-      case "LabelStat": {
-        const other = b as typeof a;
-        if (a.name !== other.name) this.fail(`label name '${a.name}' vs '${other.name}'`);
-        return;
-      }
       case "TypeAliasStat": {
         const other = b as typeof a;
         if (a.name !== other.name) this.fail(`type alias name '${a.name}' vs '${other.name}'`);

@@ -21,8 +21,6 @@ export type Stat =
   | ReturnStat
   | BreakStat
   | ContinueStat
-  | GotoStat
-  | LabelStat
   | TypeAliasStat;
 
 export interface LocalStat {
@@ -116,16 +114,6 @@ export interface BreakStat {
 
 export interface ContinueStat {
   type: "ContinueStat";
-}
-
-export interface GotoStat {
-  type: "GotoStat";
-  label: string;
-}
-
-export interface LabelStat {
-  type: "LabelStat";
-  name: string;
 }
 
 export interface TypeAliasStat {

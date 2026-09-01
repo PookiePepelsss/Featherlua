@@ -98,30 +98,127 @@ export function someBlock(stats: Stat[], predicate: (e: Expr) => boolean): boole
 
 export const isCallExpr = (e: Expr): boolean => e.type === "CallExpr" || e.type === "MethodCallExpr";
 
-// Visits every statement in the subtree, including those in function
-// bodies hanging off expressions.
+// Visits every statement in the subtree exactly once, including those in
+// function bodies hanging off expressions. Leaning on someStat here visited
+// nested-function statements once per level of nesting, because someExpr
+// descends into a function body AND the body was recursed into again as its
+// own subtree; anything counting per visit overcounted.
+function functionBodiesIn(expr: Expr, fn: (stat: Stat) => void) {
+  const visit = (e: Expr) => functionBodiesIn(e, fn);
+  switch (expr.type) {
+    case "FunctionExpr":
+      // Recurse as statements, not through someExpr: the body's own nested
+      // functions are reached by that recursion, and a second path to them
+      // through this walk is what double-visited before.
+      forEachStat(expr.body, fn);
+      return;
+    case "InterpolatedStringExpr":
+      for (const part of expr.parts) if (typeof part !== "string") visit(part);
+      return;
+    case "IndexExpr":
+      visit(expr.object);
+      visit(expr.index);
+      return;
+    case "MemberExpr":
+      visit(expr.object);
+      return;
+    case "CallExpr":
+      visit(expr.callee);
+      expr.args.forEach(visit);
+      return;
+    case "MethodCallExpr":
+      visit(expr.object);
+      expr.args.forEach(visit);
+      return;
+    case "TableExpr":
+      for (const field of expr.fields) {
+        if (field.kind === "computed") visit(field.key);
+        visit(field.value);
+      }
+      return;
+    case "BinaryExpr":
+      visit(expr.left);
+      visit(expr.right);
+      return;
+    case "UnaryExpr":
+      visit(expr.operand);
+      return;
+    case "TypeAssertionExpr":
+      visit(expr.expr);
+      return;
+    case "IfExpr":
+      visit(expr.cond);
+      visit(expr.thenExpr);
+      for (const clause of expr.elseifs) {
+        visit(clause.cond);
+        visit(clause.expr);
+      }
+      visit(expr.elseExpr);
+      return;
+    case "ParenExpr":
+      visit(expr.expr);
+      return;
+    default:
+      return;
+  }
+}
+
 export function forEachStat(stats: Stat[], fn: (stat: Stat) => void) {
   for (const stat of stats) {
     fn(stat);
-    someStat(stat, (e) => {
-      if (e.type === "FunctionExpr") forEachStat(e.body, fn);
-      return false;
-    });
+    const expr = (e: Expr) => functionBodiesIn(e, fn);
     switch (stat.type) {
+      case "LocalStat":
+        stat.init.forEach(expr);
+        break;
       case "LocalFunctionStat":
-      case "FunctionDeclStat":
         forEachStat(stat.func.body, fn);
         break;
+      case "FunctionDeclStat":
+        expr(stat.target.base);
+        forEachStat(stat.func.body, fn);
+        break;
+      case "AssignStat":
+        stat.targets.forEach(expr);
+        stat.values.forEach(expr);
+        break;
+      case "CompoundAssignStat":
+        expr(stat.target);
+        expr(stat.value);
+        break;
+      case "CallStat":
+        expr(stat.call);
+        break;
       case "DoStat":
-      case "WhileStat":
-      case "RepeatStat":
-      case "NumericForStat":
-      case "GenericForStat":
         forEachStat(stat.body, fn);
         break;
+      case "WhileStat":
+        expr(stat.cond);
+        forEachStat(stat.body, fn);
+        break;
+      case "RepeatStat":
+        forEachStat(stat.body, fn);
+        expr(stat.cond);
+        break;
       case "IfStat":
-        for (const clause of stat.clauses) forEachStat(clause.body, fn);
+        for (const clause of stat.clauses) {
+          expr(clause.cond);
+          forEachStat(clause.body, fn);
+        }
         if (stat.elseBody) forEachStat(stat.elseBody, fn);
+        break;
+      case "NumericForStat":
+        expr(stat.start);
+        expr(stat.stop);
+        if (stat.step) expr(stat.step);
+        forEachStat(stat.body, fn);
+        break;
+      case "GenericForStat":
+        stat.exprs.forEach(expr);
+        forEachStat(stat.body, fn);
+        break;
+      case "ReturnStat":
+        stat.args.forEach(expr);
         break;
       default:
         break;

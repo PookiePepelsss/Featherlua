@@ -159,8 +159,6 @@ function collectRenameStats(chunk: Chunk) {
         return;
       case "BreakStat":
       case "ContinueStat":
-      case "GotoStat":
-      case "LabelStat":
       case "TypeAliasStat":
         return;
     }

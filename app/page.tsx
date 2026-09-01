@@ -141,8 +141,15 @@ export default function Home() {
 
   async function copyOutput() {
     if (!output) return;
-    await navigator.clipboard.writeText(output);
-    setCopied(true);
+    // The clipboard call rejects when the page loses focus or permission is
+    // denied; without the catch that is an unhandled rejection and the
+    // button just silently sticks on "Copy".
+    try {
+      await navigator.clipboard.writeText(output);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
   }
 
   function downloadOutput() {

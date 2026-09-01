@@ -152,7 +152,20 @@ export class Printer {
     });
   }
 
+  // A statement that prints starting with `(` would be read as a suffix of
+  // the previous statement's trailing expression (`local a=b` followed by
+  // `(f or g)()` re-parses as one call chain), so a `;` keeps the boundary.
+  // Checking the emitted text covers every way a `(` can get there: a
+  // ParenExpr the author wrote, or one the printer added around a base.
   private printStat(stat: Stat) {
+    const at = this.parts.length;
+    this.printStatInner(stat);
+    if (at > 0 && this.parts[at]?.text[0] === "(") {
+      this.parts.splice(at, 0, { text: ";", isNumber: false });
+    }
+  }
+
+  private printStatInner(stat: Stat) {
     switch (stat.type) {
       case "LocalStat":
         this.emit("local");
@@ -256,20 +269,6 @@ export class Printer {
         return;
       case "ContinueStat":
         this.emit("continue");
-        return;
-      case "GotoStat":
-        this.emit("goto");
-        this.emit(stat.label);
-        return;
-      case "LabelStat":
-        // Always precede a label with `;`: a preceding expression-ending
-        // statement's trailing simpleexp could otherwise greedily absorb
-        // this label's opening `::` as a type assertion, stranding the
-        // closing `::` (see parser.test.ts). A leading `;` is always valid.
-        this.emit(";");
-        this.emit("::");
-        this.emit(stat.name);
-        this.emit("::");
         return;
       case "TypeAliasStat":
         if (stat.exported) this.emit("export");
@@ -387,8 +386,14 @@ export class Printer {
           if (i % 2 === 0) {
             this.emit(part as string);
           } else {
+            // Luau's lexer refuses `{{` inside a backtick string, so an
+            // expression that prints starting with `{` (a table, or an
+            // operator chain led by one) gets a space after the brace.
+            const probe = new Printer(this.renameMap);
+            probe.printExpr(part as Expr, 0);
             this.emit("{");
-            this.printExpr(part as Expr, 0);
+            if (probe.parts[0]?.text[0] === "{") this.emit(" ");
+            this.parts.push(...probe.parts);
             this.emit("}");
           }
         });

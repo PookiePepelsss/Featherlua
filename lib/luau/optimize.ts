@@ -144,14 +144,16 @@ function foldNegatedComparison(expr: Expr): Expr | undefined {
   return { ...inner, operator: inner.operator === "==" ? "~=" : "==" };
 }
 
-// `a = a + 1` is `a += 1` with two characters fewer. The target has to be
-// re-readable without side effects, so only a plain local/global or a chain
-// of member accesses on one qualifies: rewriting `t[f()].n = t[f()].n + 1`
-// would drop a call, and an index expression could run `__index` a
-// different number of times.
+// `a = a + 1` is `a += 1` with two characters fewer. Only a plain name, or
+// one member step off a plain name, qualifies. A longer chain is out: the
+// compound form evaluates `t.a` once where `t.a.b = t.a.b + 1` reads it
+// twice, and a hooked `__index` (routine in executor scripts) would see one
+// call fewer. At one step the counts match: one read, one write, whichever
+// form is used. Computed indexes stay out too, for the same reason plus the
+// key expression itself running once instead of twice.
 function stableAssignTarget(expr: Expr): string | undefined {
   if (expr.type === "Identifier") return expr.symbolId !== undefined ? `s${expr.symbolId}` : `g:${expr.name}`;
-  if (expr.type === "MemberExpr") {
+  if (expr.type === "MemberExpr" && expr.object.type === "Identifier") {
     const base = stableAssignTarget(expr.object);
     return base === undefined ? undefined : `${base}.${expr.name}`;
   }
@@ -607,36 +609,6 @@ function foldExpr(expr: Expr): Expr {
   }
 }
 
-// True if a goto elsewhere might target a label inside this block (or any
-// nested block). Eliminating a branch containing one could strand that
-// goto with no matching label, which the parser doesn't validate (Luau's
-// own compiler would only catch it at the user's next compile). Cheap and
-// conservative: just skip the optimization rather than risk it.
-function containsLabel(stats: Stat[]): boolean {
-  for (const stat of stats) {
-    switch (stat.type) {
-      case "LabelStat":
-        return true;
-      case "DoStat":
-      case "WhileStat":
-      case "NumericForStat":
-      case "GenericForStat":
-        if (containsLabel(stat.body)) return true;
-        break;
-      case "RepeatStat":
-        if (containsLabel(stat.body)) return true;
-        break;
-      case "IfStat":
-        if (stat.clauses.some((c) => containsLabel(c.body))) return true;
-        if (stat.elseBody && containsLabel(stat.elseBody)) return true;
-        break;
-      default:
-        break;
-    }
-  }
-  return false;
-}
-
 export function optimize(chunk: Chunk): Chunk {
   chunk.body = optimizeBlock(chunk.body);
   return chunk;
@@ -645,29 +617,11 @@ export function optimize(chunk: Chunk): Chunk {
 // True if `type` unconditionally exits the block it's in -- statements
 // after it in the same block never run.
 function isTerminator(stat: Stat): boolean {
-  return (
-    stat.type === "ReturnStat" ||
-    stat.type === "BreakStat" ||
-    stat.type === "ContinueStat" ||
-    stat.type === "GotoStat"
-  );
+  return stat.type === "ReturnStat" || stat.type === "BreakStat" || stat.type === "ContinueStat";
 }
 
 
 function optimizeBlock(stats: Stat[]): Stat[] {
-  // Where the last label of this block sits. Only a label after the
-  // current statement can make code past a terminator reachable, and
-  // asking that by slicing the tail and scanning it on every iteration
-  // made this pass quadratic: twenty thousand statements in one block took
-  // eight hundred milliseconds, almost all of it here.
-  let lastLabel = -1;
-  for (let i = stats.length - 1; i >= 0; i -= 1) {
-    if (stats[i].type === "LabelStat") {
-      lastLabel = i;
-      break;
-    }
-  }
-
   const kept: Stat[] = [];
   for (let i = 0; i < stats.length; i += 1) {
     const result = optimizeStat(stats[i]);
@@ -675,15 +629,14 @@ function optimizeBlock(stats: Stat[]): Stat[] {
     // A do-block whose body ends in a terminator terminates the parent too:
     // nothing after it can run, so the rest of the block goes and the
     // wrapper is free to inline as the new last statement.
-    const reachable = lastLabel > i;
     const terminates =
       isTerminator(result) || (result.type === "DoStat" && endsInTerminator(result.body));
-    if (result.type === "DoStat" && canInlineDoBlock(result, i === stats.length - 1 || (terminates && !reachable))) {
+    if (result.type === "DoStat" && canInlineDoBlock(result, i === stats.length - 1 || terminates)) {
       kept.push(...result.body);
     } else {
       kept.push(result);
     }
-    if (terminates && !reachable) break;
+    if (terminates) break;
   }
   return kept;
 }
@@ -693,7 +646,7 @@ function optimizeBlock(stats: Stat[]): Stat[] {
 // elimination (`if true then f() end` becomes `do f() end`) rather than
 // written by hand.
 function canInlineDoBlock(stat: DoStat, isLastInParent: boolean): boolean {
-  if (declaresNames(stat.body) || containsLabel(stat.body)) return false;
+  if (declaresNames(stat.body)) return false;
   const last = stat.body[stat.body.length - 1];
   // `return`, `break` and `continue` each have to end their block, so one
   // lifted into the middle of the parent would not parse.
@@ -764,7 +717,7 @@ function optimizeStat(stat: Stat): Stat | undefined {
       // drop entirely, unlike a mid-loop `break`/`if false` elimination
       // (see optimize.ts's other passes) which must preserve scope via a
       // do-wrapper; here nothing survives at all.
-      if (literalTruthiness(stat.cond) === false && !containsLabel(stat.body)) return undefined;
+      if (literalTruthiness(stat.cond) === false) return undefined;
       return stat;
     }
     case "RepeatStat":
@@ -782,32 +735,24 @@ function optimizeStat(stat: Stat): Stat | undefined {
       // is always false never runs, and one that is always true means no
       // later clause can. Trimming both before the single-clause rules
       // below lets an elseif chain collapse the same way a lone `if` does.
-      // A label anywhere in a discarded body could be the target of a goto
-      // elsewhere, so those are left where they are.
       const trimmed: typeof stat.clauses = [];
       let decided = false;
       for (const clause of stat.clauses) {
         const truthy = literalTruthiness(clause.cond);
-        if (truthy === false && !containsLabel(clause.body)) continue;
+        if (truthy === false) continue;
         trimmed.push(clause);
         if (truthy === true) {
           decided = true;
           break;
         }
       }
-      if (decided) {
-        const dropped = stat.clauses.slice(stat.clauses.indexOf(trimmed[trimmed.length - 1]) + 1);
-        const strandsLabel = dropped.some((c) => containsLabel(c.body)) ||
-          (stat.elseBody !== undefined && containsLabel(stat.elseBody));
-        if (!strandsLabel) stat.elseBody = undefined;
-        else decided = false;
-      }
+      if (decided) stat.elseBody = undefined;
       if (trimmed.length !== stat.clauses.length || decided) {
         if (!trimmed.length) {
-          if (stat.elseBody && !containsLabel(stat.elseBody)) {
+          if (stat.elseBody) {
             return stat.elseBody.length === 0 ? undefined : { type: "DoStat", body: stat.elseBody };
           }
-          if (!stat.elseBody) return undefined;
+          return undefined;
         } else {
           stat.clauses = trimmed;
         }
@@ -818,17 +763,14 @@ function optimizeStat(stat: Stat): Stat | undefined {
       if (stat.clauses.length === 1) {
         const [clause] = stat.clauses;
         const truthy = literalTruthiness(clause.cond);
-        if (truthy === true && !containsLabel(clause.body)) {
+        if (truthy === true) {
           return clause.body.length === 0 ? undefined : { type: "DoStat", body: clause.body };
         }
         if (truthy === false) {
           if (stat.elseBody) {
-            if (!containsLabel(stat.elseBody)) {
-              return stat.elseBody.length === 0 ? undefined : { type: "DoStat", body: stat.elseBody };
-            }
-          } else if (!containsLabel(clause.body)) {
-            return undefined; // neither branch ever runs; drop the statement
+            return stat.elseBody.length === 0 ? undefined : { type: "DoStat", body: stat.elseBody };
           }
+          return undefined; // neither branch ever runs; drop the statement
         }
       }
       return ifStatToReturn(stat) ?? stat;
@@ -851,8 +793,6 @@ function optimizeStat(stat: Stat): Stat | undefined {
       return stat;
     case "BreakStat":
     case "ContinueStat":
-    case "GotoStat":
-    case "LabelStat":
     case "TypeAliasStat":
       return stat;
   }

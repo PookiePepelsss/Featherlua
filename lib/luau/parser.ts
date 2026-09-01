@@ -180,16 +180,6 @@ class Parser {
       this.advance();
       return { type: "BreakStat" };
     }
-    if (this.atKeyword("goto")) {
-      this.advance();
-      return { type: "GotoStat", label: this.expectNameText() };
-    }
-    if (this.atSymbol("::")) {
-      this.advance();
-      const name = this.expectNameText();
-      this.expectSymbol("::");
-      return { type: "LabelStat", name };
-    }
     if (this.atName("continue") && !this.looksLikeContinuation(this.peek(1))) {
       this.advance();
       return { type: "ContinueStat" };

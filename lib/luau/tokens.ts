@@ -22,12 +22,13 @@ export interface Token {
   col: number;
 }
 
-// Standard Lua reserved words plus Luau's `goto`. `continue`, `type`, and
-// `export` are intentionally NOT here -- Luau treats them as contextual
-// (soft) keywords, valid as plain identifiers everywhere except the
-// specific statement positions the parser recognizes them in.
+// Luau's reserved words. `goto` is deliberately absent: Luau never took it
+// from Lua 5.2, so `local goto = 1` is a valid script. `continue`, `type`,
+// and `export` are also absent -- Luau treats them as contextual (soft)
+// keywords, valid as plain identifiers everywhere except the specific
+// statement positions the parser recognizes them in.
 export const KEYWORDS = new Set([
   "and", "break", "do", "else", "elseif", "end", "false", "for", "function",
-  "goto", "if", "in", "local", "nil", "not", "or", "repeat", "return",
+  "if", "in", "local", "nil", "not", "or", "repeat", "return",
   "then", "true", "until", "while",
 ]);

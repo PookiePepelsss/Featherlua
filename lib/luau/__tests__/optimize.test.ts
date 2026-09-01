@@ -155,10 +155,10 @@ describe("optimize: literal-condition branch elimination", () => {
     expect(chunk.body[0].type).toBe("DoStat");
   });
 
-  it("does not eliminate a branch containing a label (possible goto target from outside)", () => {
-    const result = compressAggressive("if false then ::skip:: end\ngoto skip");
+  it("folds `t[\'goto\']` to `t.goto` now that goto is a plain name", () => {
+    const result = compressAggressive("print(t[\"goto\"])");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.output).toContain("::skip::");
+    expect(result.output).toBe("print(t.goto)");
   });
 });

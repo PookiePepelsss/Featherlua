@@ -1,6 +1,6 @@
 import type { Expr, Stat } from "./ast";
 import type { ResolvedProgram } from "./scope-resolver";
-import { collectNames, forEachStat, someStat } from "./ast-search";
+import { collectNames, forEachStat, someBlock } from "./ast-search";
 import { detectReflectionRisks } from "./reflection-risks";
 
 // `local p=print` then `p(x)` pays for itself once a global is read often
@@ -102,22 +102,26 @@ const ENVIRONMENT_APIS = new Set([
 ]);
 
 function touchesEnvironment(body: Stat[]): boolean {
-  let found = false;
-  forEachStat(body, (stat) => {
-    someStat(stat, (e) => {
-      if (e.type === "Identifier" && ENVIRONMENT_APIS.has(e.name)) found = true;
-      else if (e.type === "MemberExpr" && ENVIRONMENT_APIS.has(e.name)) found = true;
-      return false;
-    });
-  });
-  return found;
+  return someBlock(
+    body,
+    (e) =>
+      (e.type === "Identifier" && ENVIRONMENT_APIS.has(e.name)) ||
+      (e.type === "MemberExpr" && ENVIRONMENT_APIS.has(e.name)),
+  );
 }
 
 export function aliasGlobals(resolved: ResolvedProgram, willRename: boolean): boolean {
   if (detectReflectionRisks(resolved.chunk).size > 0) return false;
   if (touchesEnvironment(resolved.chunk.body)) return false;
 
+  // Reads are counted with one expression sweep; pairing forEachStat with
+  // someStat here counted anything inside a nested function once per level
+  // of nesting, and the inflated counts bought aliases that grew the output.
   const reads = new Map<string, number>();
+  someBlock(resolved.chunk.body, (e) => {
+    if (e.type === "Identifier" && e.isGlobal) reads.set(e.name, (reads.get(e.name) ?? 0) + 1);
+    return false;
+  });
   const assigned = new Set<string>();
   forEachStat(resolved.chunk.body, (stat) => {
     if (stat.type === "AssignStat") {
@@ -128,10 +132,6 @@ export function aliasGlobals(resolved: ResolvedProgram, willRename: boolean): bo
       const base = stat.target.base;
       if (base.type === "Identifier" && base.isGlobal && stat.target.path.length === 0) assigned.add(base.name);
     }
-    someStat(stat, (e) => {
-      if (e.type === "Identifier" && e.isGlobal) reads.set(e.name, (reads.get(e.name) ?? 0) + 1);
-      return false;
-    });
   });
 
   const chosen = [...reads]
@@ -155,11 +155,9 @@ export function aliasGlobals(resolved: ResolvedProgram, willRename: boolean): bo
 
   // Assignment targets never reach this rewrite: a global that is assigned
   // anywhere was excluded above, so every remaining occurrence is a read.
-  forEachStat(resolved.chunk.body, (stat) => {
-    someStat(stat, (e) => {
-      rewrite(e, aliases);
-      return false;
-    });
+  someBlock(resolved.chunk.body, (e) => {
+    rewrite(e, aliases);
+    return false;
   });
 
   const decls: Stat[] = [...aliases].map(([name, alias]) => ({

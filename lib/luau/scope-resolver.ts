@@ -176,8 +176,6 @@ class ScopeResolver {
         return;
       case "BreakStat":
       case "ContinueStat":
-      case "GotoStat":
-      case "LabelStat":
       case "TypeAliasStat":
         return; // no identifiers to resolve (type spans are opaque)
     }
