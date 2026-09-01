@@ -359,8 +359,10 @@ function missingKeywordRepair(source: string, error: ParseError): Repair | undef
 
   // A table or argument list missing a separator reads to the parser as a
   // closing bracket that never arrived, because the next entry is where it
-  // expected `}`. The comma belongs just before that entry.
-  if (/^Expected '[)\]}]'/.test(error.message)) {
+  // expected `}`. The comma belongs just before that entry, which means
+  // there has to BE one: at the end of the input the same message says the
+  // bracket itself is missing, and that belongs to unclosedBracketRepair.
+  if (/^Expected '[)\]}]'/.test(error.message) && error.index < source.length) {
     // The comma belongs at the end of the entry before the one the parser
     // stopped on. When entries sit on their own lines that is the previous
     // line's end; otherwise it is where the parser stopped.
@@ -397,14 +399,36 @@ function unclosedBracketRepair(source: string): Repair | undefined {
   const closers = stack.map((entry) => pairs[entry.text]).reverse().join("");
   const description = `closed ${stack.length === 1 ? "an unclosed" : "two unclosed"} \`${stack.map((e) => e.text).join("` and `")}\``;
 
-  // A bracket almost always wants closing at the end of the line it was
-  // opened on, not at the end of the file: appending to the end would
-  // swallow every statement in between into the call or the table.
-  const lineEnd = source.indexOf("\n", stack[0].index);
-  if (lineEnd !== -1) {
-    const atLineEnd = `${source.slice(0, lineEnd)}${closers}${source.slice(lineEnd)}`;
-    if (parses(atLineEnd)) {
-      return { description, fixed: atLineEnd, line: lineOf(source, stack[0].index) };
+  // A bracket wants closing where the expression visibly ends: just before
+  // the first later line back at the opener's indentation, past which
+  // everything is sibling code, or at the end of the file when nothing
+  // dedents. Closing at the opener's own line end read well for one-line
+  // calls, but it cut a truncated multi-line table off from the indented
+  // entries that plainly belong inside it.
+  const openerIndent = indentAt(source, stack[0].index).length;
+  let insertBefore = source.length;
+  let cursor = source.indexOf("\n", stack[0].index);
+  while (cursor !== -1 && cursor < source.length) {
+    const lineEnd = source.indexOf("\n", cursor + 1);
+    const line = source.slice(cursor + 1, lineEnd === -1 ? source.length : lineEnd);
+    const content = line.trim();
+    if (content && !content.startsWith("--")) {
+      const indent = (/^[ \t]*/.exec(line) ?? [""])[0].length;
+      if (indent <= openerIndent) {
+        insertBefore = cursor;
+        break;
+      }
+    }
+    cursor = lineEnd;
+  }
+
+  // The closers sit right after the last code before that point.
+  let at = insertBefore;
+  while (at > 0 && /\s/.test(source[at - 1])) at -= 1;
+  if (at > 0 && at < source.length) {
+    const candidate = `${source.slice(0, at)}${closers}${source.slice(at)}`;
+    if (parses(candidate)) {
+      return { description, fixed: candidate, line: lineOf(source, stack[0].index) };
     }
   }
 
@@ -447,6 +471,65 @@ function strayLocalRepair(source: string, error: ParseError): Repair | undefined
   };
 }
 
+// `if x = 1 then` cannot be finished by the `then` the parser asked for
+// while the `=` sits in the condition, and a comparison is the only thing
+// an `=` there can have meant.
+function equalsInConditionRepair(source: string, error: ParseError): Repair | undefined {
+  if (!/^Expected '(then|do)'/.test(error.message)) return undefined;
+  if (source[error.index] !== "=" || source[error.index + 1] === "=") return undefined;
+  return {
+    description: "changed `=` to `==` in a condition",
+    fixed: `${source.slice(0, error.index)}==${source.slice(error.index + 1)}`,
+    line: error.line,
+  };
+}
+
+// A list ending `,)` or `return x,` at the end of a block lost nothing;
+// the comma itself is the mistake. Only fires where the parser stopped on
+// a closer or ran out of input, so a comma before anything else, which
+// could be a genuinely missing entry, is left alone.
+function trailingCommaRepair(source: string, error: ParseError): Repair | undefined {
+  if (!/^Expected a name/.test(error.message)) return undefined;
+  let before = error.index - 1;
+  while (before >= 0 && /\s/.test(source[before])) before -= 1;
+  if (source[before] !== ",") return undefined;
+  if (!/^(\)|\]|end\b|until\b|else\b|elseif\b|$)/.test(source.slice(error.index))) return undefined;
+  return {
+    description: "removed a trailing `,`",
+    fixed: `${source.slice(0, before)}${source.slice(before + 1)}`,
+    line: lineOf(source, before),
+  };
+}
+
+// A pasted script cut off inside a literal is missing exactly its closer.
+// A quoted string cannot cross the line it opened on, so the line's end is
+// the one place the quote can go; long brackets span lines, so those close
+// at the end of the file, taking whatever the truncation left as body.
+function unterminatedLiteralRepair(source: string, error: ParseError): Repair | undefined {
+  if (/^Unterminated (string|interpolated string) /.test(error.message)) {
+    const quote = source[error.index];
+    const lineEnd = source.slice(error.index).search(/[\r\n]/);
+    const at = lineEnd === -1 ? source.length : error.index + lineEnd;
+    return {
+      description: "closed an unterminated string",
+      fixed: `${source.slice(0, at)}${quote}${source.slice(at)}`,
+      line: error.line,
+    };
+  }
+  const long = /^Unterminated long (string|comment) /.exec(error.message);
+  if (long) {
+    const bracketAt = long[1] === "comment" ? error.index + 2 : error.index;
+    let level = 0;
+    while (source[bracketAt + 1 + level] === "=") level += 1;
+    return {
+      description: long[1] === "comment" ? "closed an unterminated comment" : "closed an unterminated string",
+      fixed: appendCode(source, `]${"=".repeat(level)}]`),
+      line: error.line,
+    };
+  }
+  return undefined;
+}
+
 function parseErrorOf(source: string): ParseError | undefined {
   try {
     parse(source);
@@ -460,9 +543,16 @@ function candidateFixes(source: string, error: ParseError): Repair[] {
   // The parser names the token it wanted, so the edit driven by that comes
   // first; the structural guesses are for when it named nothing useful.
   const found = [
+    // A lexer error first: nothing structural can be judged while a
+    // literal is swallowing the rest of the file.
+    unterminatedLiteralRepair(source, error),
+    // Before missingKeywordRepair: both react to "Expected 'then'", and
+    // inserting the keyword in front of a stray `=` fixes nothing.
+    equalsInConditionRepair(source, error),
     missingKeywordRepair(source, error),
     localFieldRepair(source, error),
     strayLocalRepair(source, error),
+    trailingCommaRepair(source, error),
     surplusEndRepair(source, error),
     missingEndRepair(source),
     unclosedBracketRepair(source),

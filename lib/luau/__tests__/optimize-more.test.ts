@@ -139,11 +139,11 @@ describe("optimize: string literal concatenation", () => {
     expect(output('local x = "a\\n" .. "b"')).toBe('local a="a\\nb"');
   });
 
-  it("does not fold mismatched quote characters", () => {
-    const result = compressAggressive("local x = \"a\" .. 'b'");
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.output).toContain("..");
+  it("folds mismatched quote characters by re-quoting the right side", () => {
+    expect(output("local x = \"a\" .. 'b'")).toBe('local a="ab"');
+    // The surviving delimiter is the left one, so a quote of that kind in
+    // the right literal gains the escape it now needs.
+    expect(output("local x = 'say \"hi\"' .. \"!\"")).toBe("local a='say \"hi\"!'");
   });
 
   it("quotes long-bracket strings that need no escapes, then folds them", () => {

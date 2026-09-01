@@ -163,3 +163,110 @@ describe("the shorter statements run identically", () => {
     });
   }
 });
+
+// Each case here also runs through the real runtime, so the shorter shape
+// is proven to do what the longer one did, not just to look right.
+function sameBehaviour(source: string) {
+  const result = compressAggressive(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  const before = executeWithOfficialLuau(module, source);
+  const after = executeWithOfficialLuau(module, result.output);
+  expect(before.success).toBe(true);
+  expect(after.output).toBe(before.output);
+}
+
+describe("an else holding a lone if collapses to elseif", () => {
+  it("one level", () => {
+    expect(output("if a then f() else if b then g() else h() end end"))
+      .toBe("if a then f()elseif b then g()else h()end");
+  });
+
+  it("several levels at once", () => {
+    expect(output("if a then f() else if b then g() else if c then h() end end end"))
+      .toBe("if a then f()elseif b then g()elseif c then h()end");
+  });
+
+  it("does not touch an else holding more than the if", () => {
+    expect(output("if a then f() else g() if b then h() end end"))
+      .toBe("if a then f()else g()if b then h()end end");
+  });
+
+  it("behaves the same", () => {
+    sameBehaviour('local x = 2\nif x == 1 then print("a") else if x == 2 then print("b") else print("c") end end');
+  });
+});
+
+describe("a negated condition swaps its branches instead", () => {
+  it("plain not", () => {
+    expect(output("if not a then f() else g() end")).toBe("if a then g()else f()end");
+  });
+
+  it("an empty then arm disappears entirely", () => {
+    expect(output("if not a then else g() end")).toBe("if a then g()end");
+  });
+
+  it("stays put without an else to swap with", () => {
+    expect(output("if not a then f() end")).toBe("if not a then f()end");
+  });
+
+  it("behaves the same", () => {
+    sameBehaviour('local x = nil\nif not x then print("nil branch") else print("value branch") end');
+  });
+});
+
+describe("double negation in a condition folds away", () => {
+  it("in an if", () => {
+    expect(output("if not not a then f() end")).toBe("if a then f()end");
+  });
+
+  it("in a while", () => {
+    expect(output("while not not a do f() end")).toBe("while a do f()end");
+  });
+
+  it("in an until", () => {
+    expect(output("repeat f() until not not done")).toBe("repeat f()until done");
+  });
+
+  it("keeps a single not", () => {
+    expect(output("while not a do f() end")).toBe("while not a do f()end");
+  });
+
+  it("keeps the pair where the value matters", () => {
+    // As a return value the coercion to a real boolean is observable.
+    expect(output("local function f(v) return not not v end return f"))
+      .toBe("local function a(a)return not not a end return a");
+  });
+
+  it("behaves the same", () => {
+    sameBehaviour('local x = 5\nwhile not not x do x = nil end\nprint(x)');
+  });
+});
+
+describe("statements that say nothing are dropped", () => {
+  it("an empty else", () => {
+    expect(output("if a then f() else end")).toBe("if a then f()end");
+  });
+
+  it("a trailing bare return at the top level", () => {
+    expect(output("f() return")).toBe("f()");
+  });
+
+  it("keeps a trailing return that carries a value", () => {
+    expect(output("local t = {} return t")).toBe("local a={}return a");
+  });
+});
+
+describe("mixed-quote concatenation still folds", () => {
+  it("plain pieces", () => {
+    expect(output("print(\"a\" .. 'b')")).toBe('print"ab"');
+  });
+
+  it("re-escapes what the surviving delimiter needs", () => {
+    expect(output("print('say \"hi\"' .. \"!\")")).toBe("print'say \"hi\"!'");
+  });
+
+  it("behaves the same", () => {
+    sameBehaviour("print(\"left-\" .. 'right', #(\"a\" .. 'b\"c'))");
+  });
+});

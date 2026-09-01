@@ -403,12 +403,25 @@ function trailingAbsorbingEscape(raw: string): { kind: "decimal"; digits: number
   return undefined;
 }
 
+// Rewrites a quoted literal under the other delimiter, escaping only what
+// the new delimiter requires. Undefined for long brackets and for anything
+// stringPieces cannot account for exactly.
+function requote(raw: string, quote: string): string | undefined {
+  if (raw[0] !== '"' && raw[0] !== "'") return undefined;
+  const pieces = stringPieces(raw.slice(1, -1));
+  if (!pieces) return undefined;
+  const body = pieces.map((piece) => (piece === quote ? "\\" + quote : piece)).join("");
+  return `${quote}${body}${quote}`;
+}
+
 function foldConcat(left: Expr, right: Expr): Expr | undefined {
   if (left.type !== "StringExpr" || right.type !== "StringExpr") return undefined;
   const quote = left.raw[0];
-  if ((quote !== "'" && quote !== '"') || right.raw[0] !== quote) return undefined;
+  if (quote !== "'" && quote !== '"') return undefined;
+  const rightRaw = right.raw[0] === quote ? right.raw : requote(right.raw, quote);
+  if (rightRaw === undefined) return undefined;
   const leftInner = left.raw.slice(1, -1);
-  const rightInner = right.raw.slice(1, -1);
+  const rightInner = rightRaw.slice(1, -1);
   const trailing = trailingAbsorbingEscape(leftInner);
   if (trailing?.kind === "decimal" && trailing.digits < 3 && /^[0-9]/.test(rightInner)) return undefined;
   if (trailing?.kind === "z" && /^\s/u.test(rightInner)) return undefined;
@@ -587,7 +600,7 @@ function foldExpr(expr: Expr): Expr {
       expr.expr = foldExpr(expr.expr);
       return expr;
     case "IfExpr":
-      expr.cond = foldExpr(expr.cond);
+      expr.cond = simplifyCondition(foldExpr(expr.cond));
       expr.thenExpr = foldExpr(expr.thenExpr);
       for (const clause of expr.elseifs) {
         clause.cond = foldExpr(clause.cond);
@@ -609,8 +622,29 @@ function foldExpr(expr: Expr): Expr {
   }
 }
 
+// Unwraps one `not`, seeing through cosmetic parens (`not` yields a single
+// value, so parens around it never carry truncation).
+function unwrapNot(expr: Expr): Expr | undefined {
+  const inner = expr.type === "ParenExpr" && expr.expr.type === "UnaryExpr" ? expr.expr : expr;
+  return inner.type === "UnaryExpr" && inner.operator === "not" ? inner.operand : undefined;
+}
+
+// `not not x` and `x` decide a condition identically: the double negation
+// only normalises to a boolean, and a condition never looks at the value.
+// Everywhere else the boolean matters, so this runs on conditions only.
+function simplifyCondition(expr: Expr): Expr {
+  for (;;) {
+    const once = unwrapNot(expr);
+    const twice = once === undefined ? undefined : unwrapNot(once);
+    if (twice === undefined) return expr;
+    expr = twice;
+  }
+}
+
 export function optimize(chunk: Chunk): Chunk {
-  chunk.body = optimizeBlock(chunk.body);
+  // A trailing bare `return` at the top level does what running off the end
+  // of the script does, the same as inside a function body.
+  chunk.body = dropTrailingReturn(optimizeBlock(chunk.body));
   return chunk;
 }
 
@@ -711,7 +745,7 @@ function optimizeStat(stat: Stat): Stat | undefined {
       return stat;
     }
     case "WhileStat": {
-      stat.cond = foldExpr(stat.cond);
+      stat.cond = simplifyCondition(foldExpr(stat.cond));
       stat.body = optimizeBlock(stat.body);
       // `while false do ... end` never runs its body even once -- safe to
       // drop entirely, unlike a mid-loop `break`/`if false` elimination
@@ -722,11 +756,11 @@ function optimizeStat(stat: Stat): Stat | undefined {
     }
     case "RepeatStat":
       stat.body = optimizeBlock(stat.body);
-      stat.cond = foldExpr(stat.cond);
+      stat.cond = simplifyCondition(foldExpr(stat.cond));
       return stat;
     case "IfStat": {
       for (const clause of stat.clauses) {
-        clause.cond = foldExpr(clause.cond);
+        clause.cond = simplifyCondition(foldExpr(clause.cond));
         clause.body = optimizeBlock(clause.body);
       }
       if (stat.elseBody) stat.elseBody = optimizeBlock(stat.elseBody);
@@ -773,6 +807,35 @@ function optimizeStat(stat: Stat): Stat | undefined {
           return undefined; // neither branch ever runs; drop the statement
         }
       }
+      // `else` holding a lone `if` is `elseif` written long: same statement,
+      // one `end` more. Decompilers produce the long form constantly.
+      const collapseElseIf = () => {
+        for (;;) {
+          const only = stat.elseBody?.length === 1 ? stat.elseBody[0] : undefined;
+          if (!only || only.type !== "IfStat") return;
+          stat.clauses = stat.clauses.concat(only.clauses);
+          stat.elseBody = only.elseBody;
+        }
+      };
+      collapseElseIf();
+
+      // `if not x then A else B end` and `if x then B else A end` differ
+      // only by the `not`; a condition asks nothing but truthiness, so the
+      // swap is free and four characters cheaper.
+      if (stat.clauses.length === 1 && stat.elseBody && stat.elseBody.length > 0) {
+        const [clause] = stat.clauses;
+        if (clause.cond.type === "UnaryExpr" && clause.cond.operator === "not") {
+          const thenBody = clause.body;
+          stat.clauses = [{ cond: clause.cond.operand, body: stat.elseBody }];
+          stat.elseBody = thenBody;
+          // The swapped-in else may itself be a lone `if` now.
+          collapseElseIf();
+        }
+      }
+
+      // An else with nothing in it says nothing.
+      if (stat.elseBody && stat.elseBody.length === 0) stat.elseBody = undefined;
+
       return ifStatToReturn(stat) ?? stat;
     }
     case "NumericForStat":

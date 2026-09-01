@@ -41,6 +41,12 @@ const FIXABLE: [string, string, string][] = [
   ],
   // Decompilers put `local` in front of things that are not declarations.
   ["a stray local in a condition", "local t = {}\nif local t.Parent then\n\tprint(1)\nend", "dropped a stray `local`"],
+  ["an `=` where `==` was meant", "local x = 1\nif x = 1 then\n\tprint(x)\nend", "changed `=` to `==` in a condition"],
+  ["an `=` where `==` was meant, in a while", "local i = 0\nwhile i = 0 do\n\ti = 1\nend", "changed `=` to `==` in a condition"],
+  ["a trailing comma in call arguments", "print(1, 2,)\nprint(3)", "removed a trailing `,`"],
+  ["a trailing comma in a return list", "local function f()\n\treturn 1, 2,\nend\nprint(f())", "removed a trailing `,`"],
+  ["a long string cut off by truncation", "local s = [[abc", "closed an unterminated string"],
+  ["a long comment cut off by truncation", "--[[ note\nprint(1)", "closed an unterminated comment"],
   [
     "several functions left open at once, as a long file has",
     `local M = {}\n${Array.from(
@@ -222,6 +228,35 @@ describe("a repeat with no until is never given one", () => {
       }
     });
   }
+});
+
+// A script pasted from somewhere often arrives cut off mid-token. Each of
+// these needs the literal closed and then a bracket closed after it, so
+// they also prove the small fixes chain.
+describe("files truncated mid-literal", () => {
+  const TRUNCATED: [string, string][] = [
+    ["inside a plain string", 'print("hel'],
+    ["inside an interpolated string", "local n = 1\nprint(`n is {n}"],
+    ["inside a UI library call", 'local Window = Library:CreateWindow({\n\tTitle = "My Hu'],
+  ];
+
+  for (const [name, source] of TRUNCATED) {
+    it(name, () => {
+      const [repair] = suggestRepairs(source);
+      expect(repair, "no repair offered").toBeDefined();
+      expect(repair.description).toContain("unterminated string");
+      const compiled = compileWithOfficialLuau(module, repair.fixed);
+      expect(compiled.success, `repaired source rejected: ${compiled.error}`).toBe(true);
+    });
+  }
+
+  it("keeps a truncated table's indented entries inside the table", () => {
+    // Closing at the opener's line end would compile too, while quietly
+    // turning `Title` into a global assignment outside the call.
+    const [repair] = suggestRepairs('local w = make({\n\tTitle = "My Hu');
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.fixed).toBe('local w = make({\n\tTitle = "My Hu"})\n');
+  });
 });
 
 // Above a size limit the ambiguity check is skipped, because asking costs
