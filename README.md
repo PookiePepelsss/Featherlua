@@ -32,22 +32,6 @@ visit to a tool whose whole claim is that nothing leaves the page. It looks in
 bytes it would have fetched: their SHA-384 digests match the integrity hashes
 in `support.js`.
 
-## Hosting it
-
-```
-npx wrangler login
-npm run deploy
-```
-
-That builds and publishes to Cloudflare Workers, which is what the project
-is already wired for: `worker/index.ts` is the entry, the Cloudflare Vite
-plugin writes the deploy config into `dist/server/wrangler.json` at build
-time, and the whole site is static assets served from `dist/client`.
-
-Everything runs in the browser, so there is no server to configure and
-nothing to keep running. Any static host works if you would rather not use
-Cloudflare: `dist/client` is a complete site on its own.
-
 ## Modes
 
 **Safe** removes comments and whitespace, then checks the output holds the same tokens as the input.
