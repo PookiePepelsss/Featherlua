@@ -510,9 +510,28 @@ function unterminatedLiteralRepair(source: string, error: ParseError): Repair | 
     const quote = source[error.index];
     const lineEnd = source.slice(error.index).search(/[\r\n]/);
     const at = lineEnd === -1 ? source.length : error.index + lineEnd;
+
+    // Where the quote goes is a real choice when the line ends in brackets.
+    // `print("hi)` can be read as the string `hi)` inside a call still
+    // missing its `)`, or as the string `hi` whose `)` is already there.
+    // The second needs one edit and the first needs two, so the closers at
+    // the end of the line are tried as insertion points first, innermost
+    // out, and the first reading that parses on its own wins.
+    const candidates: number[] = [];
+    let back = at;
+    while (back > error.index && /[)\]}\s]/.test(source[back - 1])) {
+      back -= 1;
+      if (/[)\]}]/.test(source[back])) candidates.push(back);
+    }
+    candidates.push(at);
+
+    const chosen = candidates.find((index) =>
+      parses(`${source.slice(0, index)}${quote}${source.slice(index)}`),
+    ) ?? at;
+
     return {
       description: "closed an unterminated string",
-      fixed: `${source.slice(0, at)}${quote}${source.slice(at)}`,
+      fixed: `${source.slice(0, chosen)}${quote}${source.slice(chosen)}`,
       line: error.line,
     };
   }

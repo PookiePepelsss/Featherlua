@@ -230,6 +230,45 @@ describe("a repeat with no until is never given one", () => {
   }
 });
 
+// Where the closing quote goes is a real choice when the line ends in
+// brackets. `print("hi)` reads either as the string `hi)` in a call still
+// missing its `)`, or as the string `hi` whose `)` is already written. The
+// second is one edit where the first is two, so it wins.
+describe("an unterminated string closes before the brackets that follow it", () => {
+  const CASES: [string, string, string][] = [
+    ["a call closed on the same line", 'print("hi)', 'print("hi")'],
+    ["single quotes", "print('single)", "print('single')"],
+    ["one of several arguments", 'f("a", "b)', 'f("a", "b")'],
+    ["an interpolated string", "print(`hi {n})", "print(`hi {n}`)"],
+    ["a genuine bracket in the text keeps one", 'print("hi))', 'print("hi)")'],
+    ["mid-file, with code after it", 'local x = 1\nprint("close me)\nprint(x)', 'local x = 1\nprint("close me")\nprint(x)'],
+  ];
+
+  for (const [name, broken, expected] of CASES) {
+    it(name, () => {
+      const [repair] = suggestRepairs(broken);
+      expect(repair, "no repair offered").toBeDefined();
+      expect(repair.fixed).toBe(expected);
+      const compiled = compileWithOfficialLuau(module, repair.fixed);
+      expect(compiled.success, `repaired source rejected: ${compiled.error}`).toBe(true);
+    });
+  }
+
+  it("still runs to the line end when no bracket follows", () => {
+    // Nothing to close before, so the quote goes where the line stops and
+    // the missing `)` is a separate fix.
+    const [repair] = suggestRepairs('print("hel');
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.fixed).toBe('print("hel")\n');
+  });
+
+  it("does not treat a comment marker inside the text as code", () => {
+    const [repair] = suggestRepairs('print("a) -- trailing comment');
+    expect(repair, "no repair offered").toBeDefined();
+    expect(repair.fixed).toBe('print("a) -- trailing comment")\n');
+  });
+});
+
 // A script pasted from somewhere often arrives cut off mid-token. Each of
 // these needs the literal closed and then a bracket closed after it, so
 // they also prove the small fixes chain.

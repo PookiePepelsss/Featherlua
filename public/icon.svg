@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- The quill from the Featherlua design. In CSS it is an 11x20 box with
+       `border-radius: 100% 0 100% 0`: neither rounded corner has to shrink,
+       because each shares an edge with a square one, so both arcs span a
+       whole side and the box collapses to a lens with a point at the top
+       right and the bottom left. A hairline of the page background runs
+       down it for the shaft, and the whole thing leans back 28 degrees. -->
+  <defs>
+    <linearGradient id="barb" x1="0" y1="0" x2="0.34" y2="0.94">
+      <stop offset="0%" stop-color="#f6dcb0"/>
+      <stop offset="55%" stop-color="#e4b46e"/>
+      <stop offset="100%" stop-color="#8a6a3c"/>
+    </linearGradient>
+    <radialGradient id="bloom" cx="50%" cy="46%" r="50%">
+      <stop offset="0%" stop-color="#e4b46e" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#e4b46e" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="#0b0a09"/>
+  <circle cx="128" cy="122" r="98" fill="url(#bloom)"/>
+
+  <g transform="rotate(-28 128 128)">
+    <path fill="url(#barb)" d="M 190 22 A 124 212 0 0 0 66 234 A 124 212 0 0 0 190 22 Z"/>
+    <rect x="122" y="14" width="12" height="228" fill="#0b0a09"/>
+  </g>
+</svg>

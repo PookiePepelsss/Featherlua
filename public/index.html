@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+// React, ReactDOM and Babel come from this folder rather than unpkg, so the
+// page renders with no third-party request and works offline. support.js
+// looks in window.__resources before reaching for a CDN, so it is used
+// exactly as it shipped. The three files are byte-identical to what it
+// would have fetched: their SHA-384 digests match its own integrity hashes.
+window.__resources = {
+  "https://unpkg.com/react@18.3.1/umd/react.production.min.js": "./vendor/react.production.min.js",
+  "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "./vendor/react-dom.production.min.js",
+  "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js": "./vendor/babel.min.js"
+};
+</script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Featherlua: Luau compression that never leaves the page</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#0b0a09;color:#f1ece4;font-family:'Instrument Sans',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;scroll-behavior:smooth;scroll-padding-top:96px}
+*{box-sizing:border-box}
+a{color:#f1ece4;text-decoration:none}a:hover{color:#e4b46e}
+::selection{background:rgba(228,180,110,.35)}
+@keyframes fl-up{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
+@keyframes fl-fade{from{opacity:0}to{opacity:1}}
+@keyframes fl-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes fl-drift{0%,100%{transform:translateX(-3%) scaleY(1)}50%{transform:translateX(3%) scaleY(1.06)}}
+@keyframes fl-drift2{0%,100%{transform:translateX(2%)}50%{transform:translateX(-4%)}}
+@keyframes fl-pulse{0%,100%{opacity:.55}50%{opacity:1}}
+@keyframes fl-blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+@keyframes fl-rotate{to{transform:rotate(360deg)}}
+@keyframes fl-pop{0%{transform:translateY(10px);opacity:0;filter:blur(4px)}100%{transform:none;opacity:1;filter:none}}
+@keyframes fl-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms !important;transition-duration:.01ms !important}}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#0b0a09;color:#f1ece4;overflow-x:clip;position:relative">
+
+  <!-- NAV -->
+  <div style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;justify-content:center;padding:14px 20px;pointer-events:none">
+    <div style="pointer-events:auto;width:100%;max-width:1120px;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:10px 10px 10px 18px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(14,13,12,.72);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);animation:fl-fade .8s ease both">
+      <a href="#hero" style="display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px;letter-spacing:-0.01em;color:#f1ece4">
+        <span style="position:relative;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;flex:none"><span style="position:absolute;width:13px;height:24px;border-radius:100% 0 100% 0;background:linear-gradient(160deg,#f6dcb0,var(--fl-accent,#e4b46e) 55%,#8a6a3c);transform:rotate(-28deg);box-shadow:0 0 22px rgba(228,180,110,.45)"></span><span style="position:absolute;width:1px;height:26px;background:linear-gradient(180deg,rgba(11,10,9,0),#0b0a09 30%,#0b0a09 75%,rgba(11,10,9,0));transform:rotate(-28deg)"></span></span>
+        Featherlua
+      </a>
+      <div style="display:flex;gap:4px;align-items:center;font-size:14px;color:#b8b1a7">
+        <a href="#modes" style="padding:8px 12px;border-radius:8px;color:#b8b1a7;transition:all .3s ease" style-hover="color:#f1ece4;background:rgba(255,255,255,.05)">Modes</a>
+        <a href="#compare" style="padding:8px 12px;border-radius:8px;color:#b8b1a7;transition:all .3s ease" style-hover="color:#f1ece4;background:rgba(255,255,255,.05)">Compare</a>
+        <a href="#verify" style="padding:8px 12px;border-radius:8px;color:#b8b1a7;transition:all .3s ease" style-hover="color:#f1ece4;background:rgba(255,255,255,.05)">Verification</a>
+        <a href="#faq" style="padding:8px 12px;border-radius:8px;color:#b8b1a7;transition:all .3s ease" style-hover="color:#f1ece4;background:rgba(255,255,255,.05)">FAQ</a>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="position:relative;display:inline-flex;padding:1px;border-radius:10px;overflow:hidden;isolation:isolate">
+          <span style="position:absolute;left:50%;top:50%;width:260px;height:260px;margin:-130px 0 0 -130px;background:conic-gradient(from 0deg,rgba(228,180,110,0) 0%,rgba(228,180,110,.95) 14%,rgba(228,180,110,0) 30%,rgba(255,255,255,.14) 62%,rgba(228,180,110,0) 100%);animation:fl-rotate 4s linear infinite;pointer-events:none"></span>
+          <span style="position:absolute;inset:1px;border-radius:9px;border:1px solid rgba(255,255,255,.06);pointer-events:none"></span>
+          <a href="https://github.com/PookiePepelsss/Featherlua" target="_blank" rel="noopener" style="position:relative;padding:8px 14px;border-radius:9px;font-size:14px;color:#f1ece4;background:#0f0e0d;transition:background .3s" style-hover="background:#1a1816;color:#f1ece4">GitHub</a>
+        </span>
+        <a href="#hero" style="padding:9px 16px;border-radius:9px;font-size:14px;font-weight:600;color:#0b0a09;transition:all .35s cubic-bezier(.2,.7,.2,1);background:var(--fl-accent,#e4b46e);box-shadow:0 0 0 1px rgba(255,255,255,.12) inset,0 8px 24px -8px rgba(228,180,110,.6)" style-hover="filter:brightness(1.08);color:#0b0a09">Open the app</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <div id="hero" data-screen-label="Hero" style="position:relative;padding:170px 20px 110px;overflow:hidden">
+    <div style="position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:72px 72px;mask-image:radial-gradient(ellipse 70% 60% at 50% 20%,#000 20%,transparent 75%);-webkit-mask-image:radial-gradient(ellipse 70% 60% at 50% 20%,#000 20%,transparent 75%)"></div>
+    <div style="position:absolute;left:50%;top:-260px;width:1100px;height:640px;transform:translateX(-50%);pointer-events:none;background:radial-gradient(ellipse at 50% 50%,rgba(228,180,110,.22),rgba(228,180,110,.06) 45%,transparent 70%);filter:blur(20px)"></div>
+    <!-- hills -->
+    <div style="position:absolute;left:-15%;right:-15%;bottom:60px;height:520px;pointer-events:none">
+      <div style="position:absolute;left:-10%;right:-10%;bottom:-360px;height:700px;border-radius:50%;background:linear-gradient(180deg,rgba(228,180,110,.14),rgba(11,10,9,0) 45%);border-top:1px solid rgba(228,180,110,.28);animation:fl-drift 18s ease-in-out infinite;filter:blur(.4px)"></div>
+      <div style="position:absolute;left:5%;right:-25%;bottom:-420px;height:720px;border-radius:50%;background:linear-gradient(180deg,rgba(212,150,90,.12),rgba(11,10,9,0) 40%);border-top:1px solid rgba(228,180,110,.18);animation:fl-drift2 24s ease-in-out infinite"></div>
+      <div style="position:absolute;left:-30%;right:15%;bottom:-470px;height:760px;border-radius:50%;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(11,10,9,0) 40%);border-top:1px solid rgba(255,255,255,.12);animation:fl-drift 30s ease-in-out infinite reverse"></div>
+    </div>
+
+    <div style="position:relative;max-width:1120px;margin:0 auto;display:flex;flex-direction:column;align-items:center;text-align:center">
+
+      <h1 style="margin:0;font-size:clamp(40px,6.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:500;max-width:960px;text-wrap:balance;animation:fl-up .9s cubic-bezier(.2,.7,.2,1) .1s both">A Luau compressor built <em style="font-style:italic;color:var(--fl-accent,#e4b46e)">entirely</em> for your browser.</h1>
+      <p style="margin:22px 0 0;font-size:clamp(16px,1.5vw,20px);line-height:1.5;color:#a9a297;max-width:620px;text-wrap:pretty;animation:fl-up .9s cubic-bezier(.2,.7,.2,1) .2s both">Paste your script. Featherlua compresses it locally in your browser and verifies the output with Luau.</p>
+      <div style="display:flex;gap:10px;margin-top:32px;animation:fl-up .9s cubic-bezier(.2,.7,.2,1) .3s both">
+        <a href="#hero" style="padding:13px 22px;border-radius:11px;font-size:15px;font-weight:600;color:#0b0a09;transition:all .35s cubic-bezier(.2,.7,.2,1);background:var(--fl-accent,#e4b46e);box-shadow:0 0 0 1px rgba(255,255,255,.14) inset,0 14px 36px -10px rgba(228,180,110,.7)" style-hover="filter:brightness(1.08);color:#0b0a09">Compress a script</a>
+        <a href="https://github.com/PookiePepelsss/Featherlua" target="_blank" rel="noopener" style="padding:13px 22px;border-radius:11px;font-size:15px;font-weight:500;color:#f1ece4;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);transition:all .35s cubic-bezier(.2,.7,.2,1)" style-hover="background:rgba(255,255,255,.07);color:#f1ece4">Read the source</a>
+      </div>
+
+      <!-- APP MOCKUP -->
+      <div style="position:relative;width:100%;max-width:960px;margin-top:72px;animation:fl-up 1.1s cubic-bezier(.2,.7,.2,1) .45s both">
+        <div style="position:absolute;inset:-1px;border-radius:20px;overflow:hidden;pointer-events:none;background:rgba(255,255,255,.06)"><div style="position:absolute;left:50%;top:50%;width:1400px;height:1400px;margin:-700px 0 0 -700px;background:conic-gradient(from 0deg,rgba(228,180,110,0) 0%,rgba(228,180,110,.8) 10%,rgba(228,180,110,0) 24%,rgba(255,255,255,.1) 58%,rgba(228,180,110,0) 100%);animation:fl-rotate 10s linear infinite"></div></div>
+        <div style="position:relative;border-radius:19px;background:#100f0e;border:1px solid rgba(255,255,255,.08);box-shadow:0 40px 120px -30px rgba(0,0,0,.9),0 0 80px -30px rgba(228,180,110,.35);overflow:hidden;text-align:left">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.02)">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8f887e">featherlua · localhost:3000</span>
+            <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#8f887e"><span style="width:6px;height:6px;border-radius:50%;background:#7fd1a0;box-shadow:0 0 10px #7fd1a0;animation:fl-pulse 2.4s ease-in-out infinite"></span>Luau WASM ready · 0 bytes sent</span>
+          </div>
+          <div style="display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);min-height:470px">
+            <div style="padding:18px 20px;border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;gap:12px;min-width:0;overflow:hidden">
+              <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#8f887e"><span>Input</span><span style="font-family:'JetBrains Mono',monospace">972 B</span></div>
+<div style="flex:1;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.7;color:#cfc8bd;overflow:hidden;display:flex;flex-direction:column">
+                <sc-for list="{{ codeLines }}" as="ln" hint-placeholder-count="14">
+                  <div style="white-space:pre;display:flex"><span style="width:26px;flex:none;color:#4d4842;text-align:right;padding-right:12px">{{ ln.n }}</span><span style="color:{{ ln.color }}">{{ ln.text }}</span></div>
+                </sc-for>
+                <div style="display:flex"><span style="width:26px;flex:none;padding-right:12px"></span><span style="display:inline-block;width:7px;height:13px;background:var(--fl-accent,#e4b46e);animation:fl-blink 1.1s steps(1) infinite"></span></div>
+              </div>
+            </div>
+            <div style="padding:18px 20px;display:flex;flex-direction:column;gap:16px;min-width:0;background:linear-gradient(180deg,rgba(228,180,110,.04),transparent 60%)">
+              <div style="display:flex;padding:3px;border-radius:9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);gap:2px">
+                <sc-for list="{{ heroModes }}" as="m" hint-placeholder-count="3">
+                  <button onClick="{{ m.select }}" style="flex:1;padding:7px 0;border:0;border-radius:7px;font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;color:{{ m.color }};background:{{ m.bg }};box-shadow:{{ m.shadow }};transition:all .25s ease">{{ m.label }}</button>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:12px;color:#8f887e">Output</span>
+                <div style="display:flex;align-items:baseline;gap:10px">
+                  <span key="{{ heroBytes }}" style="font-family:'JetBrains Mono',monospace;font-size:44px;letter-spacing:-0.03em;color:#f1ece4;line-height:1;animation:fl-pop .5s cubic-bezier(.2,.7,.2,1) both">{{ heroBytes }}</span>
+                  <span style="font-size:14px;color:#8f887e">bytes</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+                  <span style="padding:3px 8px;border-radius:6px;background:rgba(127,209,160,.12);color:#7fd1a0;font-family:'JetBrains Mono',monospace;font-size:12px">−{{ heroPct }}</span>
+                  <span key="{{ heroNote }}" style="font-size:13px;color:#8f887e;animation:fl-pop .5s cubic-bezier(.2,.7,.2,1) .05s both">{{ heroNote }}</span>
+                </div>
+              </div>
+              <div style="height:6px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden"><div style="height:100%;border-radius:999px;background:linear-gradient(90deg,var(--fl-accent,#e4b46e),#f3d6a4);width:{{ heroBar }};transition:width .7s cubic-bezier(.2,.7,.2,1)"></div></div>
+              <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;color:#cfc8bd">
+                <sc-for list="{{ heroChecks }}" as="c" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:10px"><span style="width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#0b0a09;background:{{ c.bg }};transition:background .3s">{{ c.mark }}</span>{{ c.text }}</div>
+                </sc-for>
+              </div>
+              <button style="margin-top:auto;padding:12px;border:0;border-radius:10px;background:var(--fl-accent,#e4b46e);color:#0b0a09;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 0 0 1px rgba(255,255,255,.14) inset" style-hover="filter:brightness(1.08)">Compress</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INTRO STATEMENTS -->
+  <div data-screen-label="Intro" style="padding:120px 20px 40px">
+    <div style="max-width:1120px;margin:0 auto;display:grid;grid-template-columns:180px 1fr;gap:40px">
+      <div data-reveal="1" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fl-accent,#e4b46e)">Intro</div>
+      <div style="display:flex;flex-direction:column;gap:56px">
+        <p data-reveal="1" style="margin:0;font-size:clamp(24px,2.6vw,34px);line-height:1.25;letter-spacing:-0.02em;font-weight:500;color:#f1ece4;text-wrap:pretty;max-width:820px">Everything happens inside the tab. The Luau compiler is a WebAssembly build of the official one, pinned to a known revision and checked against a hash before use. <span style="color:#8f887e">Nothing is uploaded, logged or kept.</span></p>
+        <p data-reveal="1" style="margin:0;font-size:clamp(24px,2.6vw,34px);line-height:1.25;letter-spacing:-0.02em;font-weight:500;color:#f1ece4;text-wrap:pretty;max-width:820px">Three modes, from a whitespace pass that only checks tokens to a full AST rewrite that renames every local. <span style="color:#8f887e">Every pass in Aggressive has its own checkbox.</span></p>
+        <p data-reveal="1" style="margin:0;font-size:clamp(24px,2.6vw,34px);line-height:1.25;letter-spacing:-0.02em;font-weight:500;color:#f1ece4;text-wrap:pretty;max-width:820px">Every input and output goes through the compiler before you see a result. Aggressive re-parses its own output and checks it matches what it meant to produce. <span style="color:#8f887e">If something is ambiguous, it is reported rather than guessed at.</span></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODES TABS -->
+  <div id="modes" data-screen-label="Modes" style="padding:120px 20px">
+    <div style="max-width:1120px;margin:0 auto">
+      <div data-reveal="1" style="display:flex;flex-direction:column;gap:16px;max-width:680px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fl-accent,#e4b46e)">Modes</span>
+        <h2 style="margin:0;font-size:clamp(32px,4vw,52px);line-height:1.05;letter-spacing:-0.03em;font-weight:500;text-wrap:balance">Pick how far the rewrite goes.</h2>
+        <p style="margin:0;font-size:17px;line-height:1.55;color:#a9a297;text-wrap:pretty">Each mode is a stricter promise about what stays the same. Start safe, move down the list when you know what your script can tolerate.</p>
+      </div>
+
+      <div data-reveal="1" style="margin-top:48px;display:grid;grid-template-columns:1fr 1.2fr;gap:2px;border:1px solid rgba(255,255,255,.08);border-radius:20px;background:rgba(255,255,255,.03);overflow:hidden">
+        <div style="display:flex;flex-direction:column;background:#0f0e0d">
+          <sc-for list="{{ modeTabs }}" as="t" hint-placeholder-count="4">
+            <button onClick="{{ t.select }}" style="text-align:left;border:0;border-bottom:1px solid rgba(255,255,255,.06);padding:24px 28px;background:{{ t.bg }};cursor:pointer;font-family:inherit;color:#f1ece4;display:flex;flex-direction:column;gap:8px;position:relative;transition:background .3s">
+              <span style="position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--fl-accent,#e4b46e);opacity:{{ t.barOpacity }};transition:opacity .3s"></span>
+              <span style="display:flex;align-items:center;gap:10px;font-size:17px;font-weight:600;letter-spacing:-0.01em"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8f887e">{{ t.num }}</span>{{ t.name }}</span>
+              <span style="font-size:14px;line-height:1.5;color:{{ t.descColor }};transition:color .3s">{{ t.short }}</span>
+            </button>
+          </sc-for>
+        </div>
+        <div style="padding:32px;min-height:600px;background:radial-gradient(ellipse at 80% 0%,rgba(228,180,110,.1),transparent 55%),#0c0b0a;display:flex;flex-direction:column;gap:22px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;border:1px solid rgba(228,180,110,.35);background:rgba(228,180,110,.08);font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fl-accent,#e4b46e)">{{ activeMode.tag }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8f887e">{{ activeMode.stat }}</span>
+          </div>
+          <p key="{{ activeMode.tag }}" style="margin:0;min-height:135px;font-size:18px;line-height:1.5;color:#e2dcd2;text-wrap:pretty;animation:fl-pop .5s cubic-bezier(.2,.7,.2,1) both">{{ activeMode.body }}</p>
+          <div style="display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;background:rgba(255,255,255,.02)">
+            <sc-for list="{{ activeMode.rows }}" as="r" hint-placeholder-count="5">
+              <div key="{{ r.key }}" style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.06);font-size:14px;color:#cfc8bd;animation:fl-pop .5s cubic-bezier(.2,.7,.2,1) both;animation-delay:{{ r.delay }}">
+                <span style="display:flex;align-items:center;gap:10px"><span style="width:14px;height:14px;border-radius:4px;border:1px solid rgba(255,255,255,.15);background:{{ r.boxBg }};display:inline-flex;align-items:center;justify-content:center;font-size:9px;color:#0b0a09">{{ r.mark }}</span>{{ r.label }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:{{ r.stateColor }}">{{ r.state }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <p key="{{ activeMode.stat }}" style="margin:0;font-size:13px;line-height:1.5;color:#8f887e;animation:fl-pop .5s cubic-bezier(.2,.7,.2,1) .1s both">{{ activeMode.foot }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BEFORE / AFTER + COMPARE -->
+  <div id="compare" data-screen-label="Compare" style="padding:40px 20px 120px;position:relative">
+    <div style="position:absolute;left:50%;top:-200px;width:1400px;height:900px;transform:translateX(-50%);pointer-events:none;background:radial-gradient(ellipse at 50% 45%,rgba(228,180,110,.08),transparent 60%);mask-image:linear-gradient(180deg,transparent,#000 35%,#000 70%,transparent);-webkit-mask-image:linear-gradient(180deg,transparent,#000 35%,#000 70%,transparent)"></div>
+    <div style="position:relative;max-width:1120px;margin:0 auto">
+      <div data-reveal="1" style="display:flex;justify-content:space-between;align-items:flex-end;gap:40px;flex-wrap:wrap">
+        <div style="display:flex;flex-direction:column;gap:16px;max-width:620px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fl-accent,#e4b46e)">Before and after</span>
+          <h2 style="margin:0;font-size:clamp(32px,4vw,52px);line-height:1.05;letter-spacing:-0.03em;font-weight:500;text-wrap:balance">972 bytes in. 479 bytes out.</h2>
+          <p style="margin:0;font-size:17px;line-height:1.55;color:#a9a297;text-wrap:pretty">The type alias and annotation are gone, 16 × 4 became 64, the unread flag went with nothing reading it, and every local is down to a single letter. The <code style="font-family:'JetBrains Mono',monospace;font-size:15px;color:#e2dcd2">--!strict</code> directive stays, because directives always do.</p>
+        </div>
+        <div style="display:flex;padding:3px;border-radius:9px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.07);gap:2px">
+          <sc-for list="{{ compareSets }}" as="s" hint-placeholder-count="2">
+            <button onClick="{{ s.select }}" style="padding:8px 14px;border:0;border-radius:7px;font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;color:{{ s.color }};background:{{ s.bg }};transition:all .25s ease">{{ s.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div data-reveal="1" style="margin-top:48px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div style="border:1px solid rgba(255,255,255,.08);border-radius:16px;background:#0f0e0d;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;padding:12px 18px;border-bottom:1px solid rgba(255,255,255,.07);font-size:12px;color:#8f887e"><span>Aggressive output</span><span style="font-family:'JetBrains Mono',monospace;color:#7fd1a0">479 B · 50.7% off</span></div>
+          <pre style="margin:0;padding:18px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.7;color:#cfc8bd;white-space:pre-wrap;word-break:break-all"><span style="color:#8f887e">--!strict</span>
+<span style="color:#c9a0dc">local</span> b=game:GetService<span style="color:#e4b46e">"Players"</span><span style="color:#c9a0dc">local</span> c=game:GetService<span style="color:#e4b46e">"UserInputService"</span><span style="color:#c9a0dc">local</span> a={walkSpeed=<span style="color:#7fd1a0">64</span>,espEnabled=<span style="color:#7fd1a0">true</span>}<span style="color:#c9a0dc">local function</span> d()<span style="color:#c9a0dc">local</span> a=b.LocalPlayer.Character <span style="color:#c9a0dc">if</span> a==<span style="color:#7fd1a0">nil</span> <span style="color:#c9a0dc">then return</span> <span style="color:#7fd1a0">nil</span> <span style="color:#c9a0dc">end return</span> a:FindFirstChildOfClass<span style="color:#e4b46e">"Humanoid"</span><span style="color:#c9a0dc">end local function</span> e()<span style="color:#c9a0dc">local</span> b=d()<span style="color:#c9a0dc">if</span> b <span style="color:#c9a0dc">then</span> b.WalkSpeed=a.walkSpeed <span style="color:#c9a0dc">end end</span> e()c.InputBegan:Connect(<span style="color:#c9a0dc">function</span>(b,c)<span style="color:#c9a0dc">if</span> c <span style="color:#c9a0dc">then return end if</span> b.KeyCode==Enum.KeyCode.F <span style="color:#c9a0dc">then</span> a.espEnabled=<span style="color:#c9a0dc">not</span> a.espEnabled print(<span style="color:#e4b46e">"ESP toggled"</span>,a.espEnabled)<span style="color:#c9a0dc">end end</span>)</pre>
+        </div>
+        <div style="border:1px solid rgba(255,255,255,.08);border-radius:16px;background:#0f0e0d;padding:22px 24px;display:flex;flex-direction:column;gap:18px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#8f887e"><span>{{ compareTitle }}</span><span style="font-family:'JetBrains Mono',monospace">bytes · off the source</span></div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <sc-for list="{{ compareRows }}" as="row" hint-placeholder-count="5">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;justify-content:space-between;font-size:14px"><span style="color:{{ row.labelColor }};font-weight:{{ row.weight }}">{{ row.label }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#cfc8bd">{{ row.bytes }} <span style="color:#8f887e">{{ row.off }}</span></span></div>
+                <div style="height:10px;border-radius:999px;background:rgba(255,255,255,.05);overflow:hidden"><div style="height:100%;border-radius:999px;width:{{ row.width }};background:{{ row.fill }};transition:width .9s cubic-bezier(.2,.7,.2,1)"></div></div>
+              </div>
+            </sc-for>
+          </div>
+          <p style="margin:auto 0 0;font-size:13px;line-height:1.55;color:#8f887e;text-wrap:pretty">{{ compareFoot }}</p>
+        </div>
+      </div>
+
+      <!-- STATS -->
+      <div data-reveal="1" style="margin-top:20px;display:grid;grid-template-columns:repeat(4,1fr);gap:20px">
+        <div style="border:1px solid rgba(255,255,255,.08);border-radius:16px;background:#0f0e0d;padding:22px 24px;display:flex;flex-direction:column;gap:6px;transition:all .45s cubic-bezier(.2,.7,.2,1)" style-hover="border-color:rgba(228,180,110,.35);background:#121110">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:36px;letter-spacing:-0.03em;color:#f1ece4">{{ statSmaller }}</span>
+          <span style="font-size:14px;color:#8f887e;line-height:1.4">smaller than darklua 0.19 across the corpus</span>
+        </div>
+        <div style="border:1px solid rgba(255,255,255,.08);border-radius:16px;background:#0f0e0d;padding:22px 24px;display:flex;flex-direction:column;gap:6px;transition:all .45s cubic-bezier(.2,.7,.2,1)" style-hover="border-color:rgba(228,180,110,.35);background:#121110">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:36px;letter-spacing:-0.03em;color:#f1ece4">{{ statMedian }}</span>
+          <span style="font-size:14px;color:#8f887e;line-height:1.4">median saving per file over darklua</span>
+        </div>
+        <div style="border:1px solid rgba(255,255,255,.08);border-radius:16px;background:#0f0e0d;padding:22px 24px;display:flex;flex-direction:column;gap:6px;transition:all .45s cubic-bezier(.2,.7,.2,1)" style-hover="border-color:rgba(228,180,110,.35);background:#121110">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:36px;letter-spacing:-0.03em;color:#f1ece4">{{ statWins }}<span style="font-size:18px;color:#8f887e"> / 96</span></span>
+          <span style="font-size:14px;color:#8f887e;line-height:1.4">scripts smaller, the remaining one a tie. Larger nowhere.</span>
+        </div>
+        <div style="border:1px solid rgba(255,255,255,.08);border-radius:16px;background:#0f0e0d;padding:22px 24px;display:flex;flex-direction:column;gap:6px;transition:all .45s cubic-bezier(.2,.7,.2,1)" style-hover="border-color:rgba(228,180,110,.35);background:#121110">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:36px;letter-spacing:-0.03em;color:#f1ece4">{{ statMs }}<span style="font-size:18px;color:#8f887e"> ms</span></span>
+          <span style="font-size:14px;color:#8f887e;line-height:1.4">for 96 files. darklua is faster at ~850 ms; it is a native binary, this is a browser tab.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VERIFICATION -->
+  <div id="verify" data-screen-label="Verification" style="padding:0 20px 120px">
+    <div style="max-width:1120px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center">
+      <div data-reveal="1" style="display:flex;flex-direction:column;gap:16px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fl-accent,#e4b46e)">Verification</span>
+        <h2 style="margin:0;font-size:clamp(32px,4vw,52px);line-height:1.05;letter-spacing:-0.03em;font-weight:500;text-wrap:balance">Smaller means nothing if it prints something else.</h2>
+        <p style="margin:0;font-size:17px;line-height:1.55;color:#a9a297;text-wrap:pretty">Most of the ~1,200 checks are not unit tests. Scripts are compiled and run by the official Luau build before and after compression and have to print the same thing. Generated programs go through every combination of passes, and the grammar this parser accepts is compared against the one Luau accepts.</p>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px">
+          <div style="display:flex;gap:14px;align-items:flex-start"><span style="margin-top:6px;width:6px;height:6px;border-radius:1px;background:var(--fl-accent,#e4b46e);transform:rotate(45deg);flex:none"></span><span style="font-size:15px;line-height:1.5;color:#e2dcd2"><strong style="font-weight:600">Type <code style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--fl-accent,#e4b46e)">run tests</code> into the box</strong> to check the build in front of you: a dozen scripts, all three modes, every output has to compile, run and print what the original printed.</span></div>
+          <div style="display:flex;gap:14px;align-items:flex-start"><span style="margin-top:6px;width:6px;height:6px;border-radius:1px;background:var(--fl-accent,#e4b46e);transform:rotate(45deg);flex:none"></span><span style="font-size:15px;line-height:1.5;color:#e2dcd2"><strong style="font-weight:600">Pinned compiler.</strong> The Luau WASM asset is fixed to playground revision <code style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#cfc8bd">736e1d9</code> and checked against a known hash before use.</span></div>
+          <div style="display:flex;gap:14px;align-items:flex-start"><span style="margin-top:6px;width:6px;height:6px;border-radius:1px;background:var(--fl-accent,#e4b46e);transform:rotate(45deg);flex:none"></span><span style="font-size:15px;line-height:1.5;color:#e2dcd2"><strong style="font-weight:600">Honest about limits.</strong> Scripts past roughly a megabyte stop fitting the compiler's memory. They are refused with an explanation, not a crash, and the compiler is rebuilt for the next one.</span></div>
+        </div>
+      </div>
+      <div data-reveal="1" style="position:relative">
+        <div style="position:absolute;inset:-40px;background:radial-gradient(ellipse at 50% 50%,rgba(228,180,110,.14),transparent 65%);pointer-events:none"></div>
+        <div style="position:relative;border:1px solid rgba(255,255,255,.08);border-radius:16px;background:#0f0e0d;overflow:hidden;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.8">
+          <div style="display:flex;justify-content:space-between;padding:12px 18px;border-bottom:1px solid rgba(255,255,255,.07);color:#8f887e;font-size:12px"><span>run tests</span><span style="color:#7fd1a0">12 / 12 passed</span></div>
+          <div style="padding:16px 18px;display:flex;flex-direction:column;color:#cfc8bd">
+            <sc-for list="{{ testRows }}" as="tr" hint-placeholder-count="8">
+              <div style="display:flex;justify-content:space-between;gap:12px;opacity:{{ tr.opacity }};transition:opacity .4s"><span><span style="color:#7fd1a0">✓</span> {{ tr.name }}</span><span style="color:#8f887e">{{ tr.detail }}</span></div>
+            </sc-for>
+            <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);color:#8f887e">safe · medium · aggressive: output printed exactly what the source printed</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAQ -->
+  <div id="faq" data-screen-label="FAQ" style="padding:0 20px 120px">
+    <div style="max-width:1120px;margin:0 auto;display:grid;grid-template-columns:1fr 1.4fr;gap:80px;align-items:start">
+      <div data-reveal="1" style="display:flex;flex-direction:column;gap:16px;position:sticky;top:110px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fl-accent,#e4b46e)">FAQ</span>
+        <h2 style="margin:0;font-size:clamp(32px,4vw,52px);line-height:1.05;letter-spacing:-0.03em;font-weight:500;text-wrap:balance">The questions that come up most.</h2>
+        <p style="margin:0;font-size:17px;line-height:1.55;color:#a9a297">Anything else lives in the README or an issue.</p>
+        <a href="https://github.com/PookiePepelsss/Featherlua/issues" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;font-size:15px;color:var(--fl-accent,#e4b46e);margin-top:4px;transition:all .35s cubic-bezier(.2,.7,.2,1)" style-hover="color:#f3d6a4">Open an issue</a>
+      </div>
+      <div data-reveal="1" style="display:flex;flex-direction:column;border-top:1px solid rgba(255,255,255,.08)">
+        <sc-for list="{{ faqs }}" as="f" hint-placeholder-count="6">
+          <div style="border-bottom:1px solid rgba(255,255,255,.08)">
+            <button onClick="{{ f.toggle }}" style="width:100%;display:flex;justify-content:space-between;align-items:center;gap:20px;padding:22px 4px;background:transparent;border:0;cursor:pointer;font-family:inherit;text-align:left;color:#f1ece4;font-size:18px;font-weight:500;letter-spacing:-0.01em" style-hover="color:#f3d6a4">
+              <span>{{ f.q }}</span>
+              <span style="flex:none;width:28px;height:28px;border-radius:50%;border:1px solid rgba(255,255,255,.12);display:inline-flex;align-items:center;justify-content:center;font-size:16px;color:#8f887e;transform:{{ f.rot }};transition:transform .35s cubic-bezier(.2,.7,.2,1)">+</span>
+            </button>
+            <div style="display:grid;grid-template-rows:{{ f.rows }};transition:grid-template-rows .4s cubic-bezier(.2,.7,.2,1)"><div style="overflow:hidden"><p style="margin:0;padding:0 48px 22px 4px;font-size:15px;line-height:1.6;color:#a9a297;text-wrap:pretty;opacity:{{ f.op }};transform:{{ f.ty }};transition:opacity .45s ease .1s,transform .45s cubic-bezier(.2,.7,.2,1) .1s">{{ f.a }}</p></div></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <div data-screen-label="CTA" style="padding:0 20px 40px">
+    <div data-reveal="1" style="position:relative;max-width:1120px;margin:0 auto;border:1px solid rgba(255,255,255,.08);border-radius:24px;overflow:hidden;background:#0f0e0d;padding:96px 40px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:20px">
+      <div style="position:absolute;left:-20%;right:-20%;bottom:-520px;height:760px;border-radius:50%;background:linear-gradient(180deg,rgba(228,180,110,.22),rgba(11,10,9,0) 45%);border-top:1px solid rgba(228,180,110,.4);animation:fl-drift 20s ease-in-out infinite;pointer-events:none"></div>
+      <div style="position:absolute;left:-30%;right:0;bottom:-580px;height:800px;border-radius:50%;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(11,10,9,0) 40%);border-top:1px solid rgba(255,255,255,.14);animation:fl-drift2 26s ease-in-out infinite;pointer-events:none"></div>
+      <h2 style="position:relative;margin:0;font-size:clamp(32px,4.4vw,56px);line-height:1.05;letter-spacing:-0.03em;font-weight:500;text-wrap:balance;max-width:700px">A box you paste a script into.</h2>
+      <p style="position:relative;margin:0;font-size:17px;line-height:1.55;color:#a9a297;max-width:520px;text-wrap:pretty">No account, no upload, no build pipeline. Open it, paste, press Compress.</p>
+      <div style="position:relative;display:flex;gap:10px;margin-top:10px">
+        <a href="#hero" style="padding:13px 22px;border-radius:11px;font-size:15px;font-weight:600;color:#0b0a09;transition:all .35s cubic-bezier(.2,.7,.2,1);background:var(--fl-accent,#e4b46e);box-shadow:0 0 0 1px rgba(255,255,255,.14) inset,0 14px 36px -10px rgba(228,180,110,.7)" style-hover="filter:brightness(1.08);color:#0b0a09">Open the app</a>
+        <a href="https://github.com/PookiePepelsss/Featherlua" target="_blank" rel="noopener" style="padding:13px 22px;border-radius:11px;font-size:15px;font-weight:500;color:#f1ece4;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);transition:all .35s cubic-bezier(.2,.7,.2,1)" style-hover="background:rgba(255,255,255,.07);color:#f1ece4">Star on GitHub</a>
+      </div>
+      <code style="position:relative;margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#8f887e">npm ci · npm run dev · localhost:3000</code>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div style="padding:40px 20px 48px">
+    <div style="max-width:1120px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;font-size:13px;color:#8f887e">
+      <div style="display:flex;align-items:center;gap:10px;color:#f1ece4;font-weight:600">
+        <span style="position:relative;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;flex:none"><span style="position:absolute;width:10px;height:18px;border-radius:100% 0 100% 0;background:linear-gradient(160deg,#f6dcb0,var(--fl-accent,#e4b46e) 55%,#8a6a3c);transform:rotate(-28deg)"></span><span style="position:absolute;width:1px;height:20px;background:linear-gradient(180deg,rgba(11,10,9,0),#0b0a09 30%,#0b0a09 75%,rgba(11,10,9,0));transform:rotate(-28deg)"></span></span>
+        Featherlua <span style="color:#8f887e;font-weight:400">· Luau only. Lua 5.1–5.4 and LuaJIT are out of scope.</span>
+      </div>
+      <div style="display:flex;gap:24px">
+        <a href="https://github.com/PookiePepelsss/Featherlua" target="_blank" rel="noopener" style="color:#8f887e" style-hover="color:#f1ece4">GitHub</a>
+        <a href="https://github.com/PookiePepelsss/Featherlua/blob/main/LICENSE" target="_blank" rel="noopener" style="color:#8f887e" style-hover="color:#f1ece4">AGPL-3.0</a>
+        <a href="https://github.com/PookiePepelsss/Featherlua#against-darklua" target="_blank" rel="noopener" style="color:#8f887e" style-hover="color:#f1ece4">Benchmarks</a>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;amber&quot;,&quot;options&quot;:[&quot;amber&quot;,&quot;sage&quot;,&quot;sky&quot;],&quot;tsType&quot;:&quot;'amber'|'sage'|'sky'&quot;,&quot;section&quot;:&quot;Look&quot;},&quot;scrollReveal&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Motion&quot;}}">
+class Component extends DCLogic {
+  state = { heroMode: 2, tab: 2, set: 0, faq: -1, prog: 0, tests: 0 };
+
+  accents = { amber: '#e4b46e', sage: '#9fcf9a', sky: '#8fbfe0' };
+  applyAccent() {
+    const a = this.accents[this.props.accent] || this.accents.amber;
+    document.documentElement.style.setProperty('--fl-accent', a);
+  }
+  componentDidMount() {
+    this.applyAccent();
+    document.addEventListener('click', e => {
+      const a = e.target.closest && e.target.closest('a[href^="#"]');
+      if (!a) return;
+      const id = a.getAttribute('href').slice(1), el = document.getElementById(id);
+      if (!el) return;
+      e.preventDefault();
+      const top = el.getBoundingClientRect().top + window.scrollY - (id === 'hero' ? 0 : 90);
+      window.scrollTo({ top, behavior: 'smooth' });
+      history.replaceState(null, '', '#' + id);
+    });
+    const ease = 'cubic-bezier(.2,.7,.2,1)';
+    if (this.props.scrollReveal ?? true) {
+      const io = new IntersectionObserver(es => es.forEach(e => {
+        if (!e.isIntersecting) return;
+        e.target.style.opacity = '1'; e.target.style.transform = 'none'; io.unobserve(e.target);
+      }), { threshold: 0.12 });
+      document.querySelectorAll('[data-reveal]').forEach(el => {
+        if (el.getBoundingClientRect().top < window.innerHeight * 0.85) return;
+        el.style.opacity = '0'; el.style.transform = 'translateY(30px)';
+        el.style.transition = `opacity .9s ${ease}, transform .9s ${ease}`;
+        io.observe(el);
+      });
+    }
+    const stats = document.getElementById('compare');
+    if (stats) {
+      const so = new IntersectionObserver(es => es.forEach(e => {
+        if (!e.isIntersecting) return; so.disconnect();
+        const t0 = performance.now(), dur = 1400;
+        const step = t => { const p = Math.min(1, (t - t0) / dur); this.setState({ prog: 1 - Math.pow(1 - p, 3) }); if (p < 1) requestAnimationFrame(step); };
+        requestAnimationFrame(step);
+      }), { threshold: 0.2 });
+      so.observe(stats);
+    }
+    const ver = document.getElementById('verify');
+    if (ver) {
+      const vo = new IntersectionObserver(es => es.forEach(e => {
+        if (!e.isIntersecting) return; vo.disconnect();
+        let n = 0; const tick = () => { n++; this.setState({ tests: n }); if (n < 8) setTimeout(tick, 140); }; setTimeout(tick, 200);
+      }), { threshold: 0.3 });
+      vo.observe(ver);
+    }
+  }
+  componentDidUpdate(prev) { if (prev.accent !== this.props.accent) this.applyAccent(); }
+
+  renderVals() {
+    const s = this.state, p = s.prog;
+    const acc = 'var(--fl-accent,#e4b46e)';
+    const hero = [
+      { label: 'Safe', bytes: 827, pct: '14.9%', note: 'Comments and whitespace removed; tokens checked.', checks: [1, 0, 0] },
+      { label: 'Medium', bytes: 729, pct: '25.0%', note: 'AST rewrite, every local name kept.', checks: [1, 1, 0] },
+      { label: 'Aggressive', bytes: 479, pct: '50.7%', note: 'Locals renamed, constants folded, types stripped.', checks: [1, 1, 1] },
+    ];
+    const h = hero[s.heroMode];
+    const src = [['--!strict', '#8f887e'], ['-- Simple walkspeed + ESP toggle.', '#8f887e'], ['type Config = {', '#cfc8bd'], ['\twalkSpeed: number,', '#cfc8bd'], ['\tespEnabled: boolean,', '#cfc8bd'], ['}', '#cfc8bd'], ['local Players = game:GetService("Players")', '#cfc8bd'], ['local DEFAULT_SPEED = 16', '#cfc8bd'], ['local BOOST_MULTIPLIER = 4', '#cfc8bd'], ['local UNUSED_LEGACY_FLAG = false', '#cfc8bd'], ['local config: Config = {', '#cfc8bd'], ['\twalkSpeed = DEFAULT_SPEED * BOOST_MULTIPLIER,', '#cfc8bd'], ['\tespEnabled = true,', '#cfc8bd'], ['}', '#cfc8bd'], ['if true then applySpeed() end', '#cfc8bd']];
+    const checkText = ['Compiled with official Luau', 'Output re-parsed and matched', 'Locals renamed to single letters'];
+    const modes = [
+      { name: 'Safe', short: 'Strip comments and whitespace, check tokens match.', tag: 'mode · safe', stat: '972 → 827 B', body: 'Removes comments and whitespace, then checks the output holds the same tokens as the input. The lightest promise and the hardest to break.',
+        rows: [['Remove comments', 1], ['Collapse whitespace', 1], ['Token equality check', 1], ['Parse to AST', 0], ['Rename locals', 0]], foot: 'Shebangs, --! directives and licence headers survive every mode.' },
+      { name: 'Medium', short: 'Full AST pass that keeps every local name and binding.', tag: 'mode · medium', stat: '972 → 729 B', body: 'Parses to an AST but keeps every local name and binding. Folds constant arithmetic, drops type annotations and branches that cannot run, merges adjacent declarations, and picks the shorter spelling of a form.',
+        rows: [['Fold constant arithmetic', 1], ['Drop type annotations', 1], ['Remove unreachable branches', 1], ['Merge adjacent declarations', 1], ['Rename locals', 0]], foot: 'Debug and reflection APIs can still observe changed declaration layout or line information, so the app warns when it detects them.' },
+      { name: 'Aggressive', short: 'Rename, propagate, dedupe. Every pass has a checkbox.', tag: 'mode · aggressive', stat: '972 → 479 B', body: 'Renames locals, folds and propagates constants, drops what nothing reads, strips type annotations, merges declarations, dedupes strings, and rewrites forms into shorter ones. Then re-parses its own output and checks it matches what it meant to produce.',
+        rows: [['Rename locals', 1], ['Propagate constants', 1], ['Drop unread declarations', 1], ['Dedupe strings', 1], ['Alias globals (local p = print)', 2]], foot: 'Global aliasing is worth about 3% on large scripts but off by default: it keeps whatever the global held at load time, and refuses outright on scripts touching getfenv, getgenv, hookfunction, loadstring, _G, shared or debug.' },
+      { name: 'Auto Repair', short: 'Fix what the compiler rejects, when there is one sensible reading.', tag: 'auto repair · off by default', stat: 'offered, not applied', body: 'Fixes a script the compiler rejects where the mistake has only one sensible reading. Anything ambiguous is reported rather than guessed at. Off by default, in which case the fix is offered instead.',
+        rows: [['Missing end, then, do or comma', 1], ['Unclosed bracket', 1], ['Stray end', 1], ['repeat with no until condition', 3], ['Anything ambiguous', 3]], foot: 'A repeat with no until is left unchanged because inventing a condition would change its behaviour.' },
+    ];
+    const stateMap = { 0: ['off', '#6f695f', 'transparent', ''], 1: ['on', '#7fd1a0', acc, '✓'], 2: ['opt-in', '#e4b46e', 'transparent', ''], 3: ['reported', '#8f887e', 'transparent', '!'] };
+    const am = modes[s.tab];
+    const sets = [
+      { label: 'One script', title: 'The script above, five ways', foot: 'darklua 0.19 running `darklua process` on its defaults, which beat a hand-picked rule list: its better showing, not its worse one.',
+        rows: [['Source', 972, ''], ['Safe', 827, '14.9%'], ['Medium', 729, '25.0%'], ['darklua 0.19', 623, '35.9%'], ['Aggressive', 479, '50.7%']] },
+      { label: '96-script corpus', title: 'Same 96 scripts from Stefanuk12/ROBLOX through both tools', foot: 'Most of the gap is type stripping and constant propagation: darklua leaves type Config = { ... } in the output, and Luau erases it at runtime anyway.',
+        rows: [['Source', 1291360, ''], ['Safe', 906130, '29.8%'], ['Medium', 881500, '31.7%'], ['darklua 0.19', 807277, '37.5%'], ['Aggressive', 734885, '43.1%']] },
+    ];
+    const cs = sets[s.set], max = cs.rows[0][1];
+    const fmt = n => n.toLocaleString('en-US');
+    const faqs = [
+      ['Does anything leave the page?', 'No. Compression runs in your tab, and the Luau compiler is a WebAssembly build of the official one, pinned to a known revision and checked against a hash before use. There is no server to send anything to.'],
+      ['Which Lua does it handle?', 'Luau only. Lua 5.1 to 5.4 and LuaJIT are out of scope. Shebangs, --! directives and licence headers survive every mode.'],
+      ['Is there a size limit?', 'Roughly a megabyte, and it comes from the compiler rather than the compressor. The official Luau build runs inside the page in a fixed amount of memory, 32 MB to start and 512 MB at most. Past that, a script is refused with an explanation and the compiler is rebuilt so the next one works.'],
+      ['How is this different from darklua?', 'darklua is a build-pipeline program with a CLI, bundling, require resolution and configurable rules, and it handles Lua 5.1 as well as Luau. It is also faster. This is a box you paste a script into, and it comes out smaller on 95 of 96 scripts.'],
+      ['Why is global aliasing off by default?', 'local p = print is worth about 3% on large scripts, but the alias keeps whatever the global held at load time. Anything that hooks or replaces that global later would be missed, which is normal in executor environments, so the pass refuses on scripts touching getfenv, getgenv, hookfunction, loadstring, _G, shared or the debug reflection APIs.'],
+      ['How do I know the build in front of me works?', 'Type run tests into the input box and press Compress. A dozen scripts are compiled, run, compressed in all three modes, and every output has to compile, run and print exactly what the original printed.'],
+      ['What is the licence?', 'AGPL-3.0. Use it, change it, run it. If you distribute it or host a modified version, that version\'s source has to be available under the same licence.'],
+    ];
+    const tests = [['walkspeed-esp', '972 → 479'], ['closures-upvalues', '3 modes ok'], ['string-escapes', 'bytes equal'], ['metatables', 'output equal'], ['generic-for', 'output equal'], ['varargs-select', 'output equal'], ['goto-labels', 'output equal'], ['integer-division', 'output equal']];
+    return {
+      heroModes: hero.map((m, i) => ({ label: m.label, select: () => this.setState({ heroMode: i }), color: i === s.heroMode ? '#0b0a09' : '#a9a297', bg: i === s.heroMode ? acc : 'transparent', shadow: i === s.heroMode ? '0 2px 10px -4px rgba(228,180,110,.6)' : 'none' })),
+      codeLines: src.map(([text, color], i) => ({ n: i + 1, text: text.replace(/\t/g, '    '), color })),
+      heroBytes: h.bytes, heroPct: h.pct, heroNote: h.note, heroBar: (h.bytes / 972 * 100).toFixed(1) + '%',
+      heroChecks: checkText.map((t, i) => ({ text: t, mark: h.checks[i] ? '✓' : '', bg: h.checks[i] ? '#7fd1a0' : 'rgba(255,255,255,.1)' })),
+            modeTabs: modes.map((m, i) => ({ name: m.name, short: m.short, num: '0' + (i + 1), select: () => this.setState({ tab: i }), bg: i === s.tab ? 'rgba(228,180,110,.06)' : 'transparent', barOpacity: i === s.tab ? 1 : 0, descColor: i === s.tab ? '#cfc8bd' : '#8f887e' })),
+      activeMode: { tag: am.tag, stat: am.stat, body: am.body, foot: am.foot, rows: am.rows.map(([label, st], i) => ({ label, key: am.tag + i, delay: (i * 60) + 'ms', state: stateMap[st][0], stateColor: stateMap[st][1], boxBg: stateMap[st][2], mark: stateMap[st][3] })) },
+      compareSets: sets.map((c, i) => ({ label: c.label, select: () => this.setState({ set: i }), color: i === s.set ? '#0b0a09' : '#a9a297', bg: i === s.set ? acc : 'transparent' })),
+      compareTitle: cs.title, compareFoot: cs.foot,
+      compareRows: cs.rows.map(([label, b, off], i) => { const hi = i === 4, dl = i === 3; return { label, bytes: fmt(b), off, width: (b / max * 100 * (p || 0.02)).toFixed(1) + '%', fill: hi ? `linear-gradient(90deg,${acc},#f3d6a4)` : dl ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.14)', labelColor: hi ? '#f1ece4' : '#cfc8bd', weight: hi ? 600 : 400 }; }),
+      statSmaller: (8.97 * p).toFixed(2) + '%', statMedian: (6.13 * p).toFixed(2) + '%', statWins: Math.round(95 * p), statMs: fmt(Math.round(1860 * p)),
+      testRows: tests.map(([name, detail], i) => ({ name, detail, opacity: i < s.tests ? 1 : 0.12 })),
+      faqs: faqs.map(([q, a], i) => ({ q, a, toggle: () => this.setState({ faq: s.faq === i ? -1 : i }), rot: s.faq === i ? 'rotate(45deg)' : 'rotate(0deg)', rows: s.faq === i ? '1fr' : '0fr', op: s.faq === i ? 1 : 0, ty: s.faq === i ? 'none' : 'translateY(-8px)' })),
+    };
+  }
+}
+</script>
+</body>
+</html>

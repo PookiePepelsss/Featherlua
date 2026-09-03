@@ -9,7 +9,8 @@ npm ci
 npm run dev
 ```
 
-Then open `http://localhost:3000`, paste a script, and press Compress.
+`http://localhost:3000` serves the landing page; the compressor itself is at
+`http://localhost:3000/app`. Paste a script there and press Compress.
 
 ## Modes
 
