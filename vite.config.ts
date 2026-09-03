@@ -1,7 +1,18 @@
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import vinext from "vinext";
 import { defineConfig } from "vite";
-import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
+
+// `.openai/hosting.json` is gitignored, so importing it outright meant a
+// fresh clone could not build at all: CI and every host that builds from
+// the repo failed on the missing module rather than on anything real. It
+// only ever names optional D1 and R2 bindings, and this project uses
+// neither, so its absence is a valid state.
+const hostingConfigPath = fileURLToPath(new URL("./.openai/hosting.json", import.meta.url));
+const hostingConfig: { d1?: string; r2?: string } = existsSync(hostingConfigPath)
+  ? JSON.parse(readFileSync(hostingConfigPath, "utf8"))
+  : {};
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
