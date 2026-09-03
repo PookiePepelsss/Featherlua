@@ -18,20 +18,6 @@ npm run dev
 `http://localhost:3000` serves the landing page; the compressor itself is at
 `http://localhost:3000/app`. Paste a script there and press Compress.
 
-## The site
-
-`public/index.html` is the landing page, exported from the design canvas and
-served as it came: its own markup, its own motion, its own copy. `support.js`
-is the runtime it shipped with, byte for byte.
-
-The one thing that changed is where it gets React. That runtime fetches React,
-ReactDOM and Babel from unpkg, which would mean a third-party request on every
-visit to a tool whose whole claim is that nothing leaves the page. It looks in
-`window.__resources` before reaching for a CDN, so those three are served from
-`public/vendor` instead and the file itself is untouched. They are the same
-bytes it would have fetched: their SHA-384 digests match the integrity hashes
-in `support.js`.
-
 ## Modes
 
 **Safe** removes comments and whitespace, then checks the output holds the same tokens as the input.
