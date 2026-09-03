@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "deploy": "vinext build && wrangler deploy -c dist/server/wrangler.json",
+    "deploy": "vinext build && wrangler deploy -c dist/server/wrangler.json --name app",
     "test": "vitest run",
     "benchmark": "vitest bench --run"
   },
